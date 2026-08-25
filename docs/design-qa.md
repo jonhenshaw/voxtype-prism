@@ -27,14 +27,20 @@ The reference and installed recording states were compared at equivalent logical
 
 ## Functional checks
 
-- Production `shell.qml` loads under Quickshell 0.3.1 with no QML/runtime errors.
-- Focused-monitor mapping placed the layer on DP-5 during the live cycle.
+- `Service.qml` loads as an enabled Omarchy `service` under Quickshell 0.3.1 with no plugin QML/runtime errors.
+- Before setup, the service reported `configured: false`, stayed hidden, and did not start its audio bridge while Voxtype's stock OSD remained enabled.
+- After explicit setup, the service reported `configured: true` and Voxtype ran without an OSD child.
+- Focused-monitor mapping placed the live plugin layer on DP-2.
 - Final layer geometry is `168 × 48`; centering the 156 × 40 card inside it with a 20 px layer margin preserves the card's original 24 px bottom position.
-- The live state probe reported `recording`, `surfaceWanted: true`, `presence: 1`, and an attached audio bridge.
+- The live state probe reported `recording`, `surfaceWanted: true`, `presence: 1`, and an attached audio bridge; Hyprland attributed the layer to the Omarchy shell process.
 - The recording-and-cancel test returned the daemon and state file to `idle` without transcribing or pasting text.
 - The transcribing preview matches the selected yellow working treatment.
 - The microphone and ready checkmark both reset to zero rotation after the working spinner stops.
 - The final deployed micro-halo is tightly bounded to 6 px at 8% opacity; no long solid capsule remains.
-- Final process tree contains one Voxtype daemon, one custom Quickshell OSD, and one audio bridge; no GTK OSD or duplicate preview instance remains.
+- Disable/re-enable unloaded and recreated the service and audio bridge cleanly.
+- The explicit restore helper returned Voxtype to its original OSD state; official plugin removal and atomic `omarchy plugin add` installation both completed successfully.
+- Five isolated config-helper tests pass, including scoped edits, comment preservation, missing-section creation, and exact enabled-state restoration.
+- Final process tree contains one Voxtype daemon and the existing Omarchy shell only; there is no standalone Signal Quickshell process or Voxtype OSD child.
+- Two shell crashes during locked-session lifecycle testing were traced to Omarchy's lock recovery fatal (`Tried to show lockscreen surfaces without active lock`) before Signal's service was loaded. No Signal QML frame or runtime error appeared in either crash timeline.
 
 final result: passed

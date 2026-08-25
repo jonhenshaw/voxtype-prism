@@ -123,6 +123,45 @@ def restart_voxtype(skip: bool) -> None:
         return
     subprocess.run(["systemctl", "--user", "restart", "voxtype.service"], check=True)
     subprocess.run(["systemctl", "--user", "is-active", "--quiet", "voxtype.service"], check=True)
+
+
+def check_runtime(skip: bool) -> None:
+    if skip:
+        return
+    for binary in ("voxtype", "voxtype-audio-bridge", "omarchy-shell", "systemctl"):
+        if shutil.which(binary) is None:
+            raise RuntimeError(f"required command not found: {binary}")
+    probe = subprocess.run(
+        ["omarchy-shell", "voxtype-signal", "status"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode != 0:
+        raise RuntimeError(
+            "Voxtype Signal is not loaded; enable the plugin before running setup"
+        )
+    json.loads(probe.stdout)
+
+
+def wait_signal_ready(skip: bool) -> None:
+    if skip:
+        return
+    for _ in range(30):
+        probe = subprocess.run(
+            ["omarchy-shell", "voxtype-signal", "status"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode == 0:
+            try:
+                if json.loads(probe.stdout).get("configured") is True:
+                    return
+            except json.JSONDecodeError:
+                pass
+        time.sleep(0.2)
+    raise RuntimeError("plugin did not become ready after Voxtype restarted")
     time.sleep(0.75)
     subprocess.run(["systemctl", "--user", "is-active", "--quiet", "voxtype.service"], check=True)
 
@@ -142,6 +181,7 @@ def load_state(path: Path) -> dict[str, object] | None:
 def setup(args: argparse.Namespace) -> int:
     config = Path(args.config).expanduser() if args.config else config_path()
     state = Path(args.state).expanduser() if args.state else state_path()
+    check_runtime(args.no_restart)
     text = read_config(config)
     existing = load_state(state)
 
@@ -161,6 +201,7 @@ def setup(args: argparse.Namespace) -> int:
     if next_text != text:
         atomic_write(config, next_text)
     restart_voxtype(args.no_restart)
+    wait_signal_ready(args.no_restart)
     print(f"Voxtype Signal is configured. Built-in OSD disabled in {config}")
     print(f"Restore with: {Path(__file__).name} restore")
     return 0
