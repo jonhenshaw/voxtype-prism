@@ -1,0 +1,5 @@
+*.bak
+*.log
+*.qslog
+.DS_Store
+deployment/
