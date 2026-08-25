@@ -1,43 +1,81 @@
-# Voxtype Signal OSD
+# Voxtype Signal
 
-User-owned Quickshell implementation of the selected **Signal** Voxtype indicator.
+An Omarchy-native, theme-aware recording indicator for
+[Voxtype](https://github.com/peteonrails/voxtype).
 
-![Signal recording indicator](docs/images/installed-micro-halo.png)
+![Voxtype Signal recording indicator](preview.png)
 
-- Card: 156 × 40 px, bottom-center, 24 px screen margin; 168 × 48 px click-through carrier.
-- States: live recording levels, streaming, transcribing, and a 650 ms ready confirmation.
-- Colors: follows the active Omarchy palette through `~/.local/state/omarchy/current/theme/colors.toml`.
-- Placement: follows the focused Hyprland monitor.
-- Input: empty pointer region and no keyboard focus.
-- A 6 px, 8%-opacity micro-halo softly diffuses the state color immediately around the card.
+- Compact 156 × 40 px pill with a tightly diffused micro-halo.
+- Real microphone levels from Voxtype's audio bridge.
+- Distinct listening, streaming, working, and ready states.
+- Follows the focused Hyprland monitor.
+- Uses an empty input region and never steals keyboard focus.
+- Runs as an Omarchy `service` inside the existing `omarchy-shell` process.
+- No network access, credentials, analytics, or privileged commands.
 
-The deployed copy is at `~/.local/share/voxtype/quickshell-signal/`. The user-service drop-in `~/.config/systemd/user/voxtype.service.d/30-signal-osd.conf` sets `VOXTYPE_OSD_QML_PATH` to that directory, and `~/.config/voxtype/config.toml` selects `frontend = "quickshell"`.
+## Requirements
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the startup chain and persistence boundaries, and [docs/design-qa.md](docs/design-qa.md) for the verified visual and runtime checks.
+- Omarchy Quattro with shell-plugin support.
+- Voxtype 0.7.5 or newer, running as `voxtype.service`.
+- `/usr/bin/voxtype-audio-bridge` from the Voxtype package.
+- `JetBrainsMono Nerd Font` for the state icons.
 
-Installed on 2026-08-25. The restart also exposed a pre-existing invalid model name (`parakeet-tdt-0.6b-v2-int8`). The installed model and the immediately preceding successful service logs both identify the working model as `parakeet-tdt-0.6b-v2`, so the active config was reconciled to that exact name.
+## Install
 
-Backups:
-
-- `~/.config/voxtype/config.toml.signal-20260825-005656.bak` is the byte-for-byte pre-install config. It preserves the invalid model name for forensic recovery and should not be restored wholesale.
-- `~/.config/voxtype/config.toml.signal-rollback` is the known-good rollback config: working Parakeet v2 plus the previous `frontend = "native"` setting, which falls back to GTK4 on this installation.
-- `~/.local/share/voxtype/quickshell-signal/SignalSurface.qml.long-halo.bak` preserves the first, stronger halo treatment.
-
-## Preview
-
-```bash
-VOXTYPE_SIGNAL_PREVIEW_STATE=recording qs -p ./preview.qml
-VOXTYPE_SIGNAL_PREVIEW_STATE=transcribing qs -p ./preview.qml
-```
-
-## Rollback
+Add and enable the plugin:
 
 ```bash
-install -m 0644 ~/.config/voxtype/config.toml.signal-rollback ~/.config/voxtype/config.toml
-mv ~/.config/systemd/user/voxtype.service.d/30-signal-osd.conf \
-  ~/.config/systemd/user/voxtype.service.d/30-signal-osd.conf.disabled
-systemctl --user daemon-reload
-systemctl --user restart voxtype.service
+omarchy plugin add https://github.com/henshaw/voxtype-signal-osd.git --enable
 ```
 
-Confirm that `voxtype-osd-gtk4` is again the OSD child. The custom QML directory can remain in place; without the drop-in and Quickshell frontend selection it is ignored. No packaged Voxtype or Omarchy file was modified.
+Then explicitly hand visualizer ownership from Voxtype to the plugin:
+
+```bash
+~/.config/omarchy/plugins/io.github.henshaw.voxtype-signal/scripts/voxtype-signal-config setup
+```
+
+The setup helper:
+
+1. Reads the existing Voxtype config without changing unrelated settings.
+2. Records whether Voxtype's built-in OSD was enabled.
+3. Creates a timestamped backup.
+4. Changes only `[osd] enabled` to `false` using an atomic write.
+5. Restarts and verifies `voxtype.service`.
+
+Until setup is completed, Signal stays dormant so it never duplicates the
+built-in Voxtype indicator.
+
+Check setup state at any time:
+
+```bash
+~/.config/omarchy/plugins/io.github.henshaw.voxtype-signal/scripts/voxtype-signal-config status
+```
+
+## Remove
+
+Restore the exact OSD-enabled state recorded during setup, then remove the
+plugin:
+
+```bash
+~/.config/omarchy/plugins/io.github.henshaw.voxtype-signal/scripts/voxtype-signal-config restore
+omarchy plugin remove io.github.henshaw.voxtype-signal
+```
+
+The helper restores only `[osd] enabled`; it never rolls back or overwrites the
+user's model, engine, hotkey, output, or other Voxtype settings.
+
+## Development
+
+```bash
+python3 -m unittest discover -s tests -v
+omarchy plugin validate .
+git diff --check
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for lifecycle and failure boundaries and
+[docs/design-qa.md](docs/design-qa.md) for the verified visual states.
+
+## License and attribution
+
+MIT. `AudioBridge.qml` and `StateReader.qml` are adapted from Voxtype 0.7.5,
+copyright Peter Jackson, under Voxtype's MIT license.

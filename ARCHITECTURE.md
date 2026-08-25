@@ -1,49 +1,57 @@
 # Architecture
 
-Signal is a user-owned replacement for Voxtype's Quickshell OSD frontend. It is
-not loaded into the Omarchy shell process and it does not modify packaged files.
+Voxtype Signal is an Omarchy `service` plugin. It runs inside the existing
+`omarchy-shell` process and never launches a second Quickshell instance.
 
 ```text
-graphical-session.target
-  └─ voxtype.service
-      └─ voxtype daemon
-          └─ voxtype-osd-quickshell --no-daemonize
-              └─ qs -p $VOXTYPE_OSD_QML_PATH
-                  └─ shell.qml
-                      ├─ StateReader.qml
-                      ├─ AudioBridge.qml
-                      ├─ OmarchyPalette.qml
-                      └─ SignalSurface.qml
+omarchy-shell
+  └─ io.github.henshaw.voxtype-signal / Service.qml
+      ├─ VoxtypeConfig.qml   gates rendering until stock OSD is disabled
+      ├─ StateReader.qml     watches idle/recording/transcribing state
+      ├─ AudioBridge.qml     reads live peak/RMS frames
+      ├─ OmarchyPalette.qml  follows the current theme
+      └─ SignalSurface.qml   owns the click-through PanelWindow
+
+voxtype.service
+  ├─ writes $XDG_RUNTIME_DIR/voxtype/state
+  └─ serves $XDG_RUNTIME_DIR/voxtype/audio.sock
 ```
 
-## Inputs
+## Why the built-in Voxtype OSD is disabled
 
-- State: `$XDG_RUNTIME_DIR/voxtype/state`.
-- Audio levels: `/usr/bin/voxtype-audio-bridge`, which reads Voxtype's audio
-  socket and emits peak/RMS frames as NDJSON.
-- Theme: `$XDG_STATE_HOME/omarchy/current/theme/colors.toml`, with Tokyo Night
-  fallbacks when Omarchy theme data is unavailable.
-- Output placement: `Hyprland.focusedMonitor`, mapped to `Quickshell.screens`.
+Voxtype 0.7.5 starts its audio-level broadcaster regardless of whether the
+built-in OSD child is enabled. Only spawning that child is gated by
+`[osd] enabled`. Signal therefore sets the built-in OSD to disabled through an
+explicit, reversible helper while retaining the same live audio feed.
 
-## Lifecycle and persistence
+The plugin itself never writes Voxtype configuration. `VoxtypeConfig.qml` reads
+the file and fails closed: when the stock OSD is enabled or the config is
+missing, Signal renders nothing and does not start its audio-bridge child.
 
-The Voxtype daemon owns the OSD child. The Quickshell launcher stays attached
-to the daemon, so service restart, logout, and reboot replace the complete
-process tree together. A systemd user-service drop-in supplies
-`VOXTYPE_OSD_QML_PATH`; Voxtype's config selects `frontend = "quickshell"`.
+## Lifecycle
 
-The deployed QML and drop-in live under user-owned XDG directories. Omarchy and
-Voxtype package upgrades therefore do not overwrite them. Compatibility still
-depends on Voxtype's state/audio contracts and Quickshell APIs remaining stable.
+Omarchy loads `Service.qml` once when the plugin is enabled. Disabling or
+removing the plugin destroys the service, its PanelWindow, and the audio bridge.
+Voxtype retains responsibility for speech capture, transcription, hotkeys, and
+output. Signal is presentation-only.
 
-## Packaging direction
+The helper under `scripts/` is user-invoked. It keeps a small state record under
+`$XDG_STATE_HOME/voxtype-signal-osd/` and uses an atomic replacement to change
+only the scoped `[osd] enabled` key. Restore uses the recorded original value,
+not a whole-file rollback, so later user changes survive.
 
-The current tree is suitable for a personal Git repository. A shareable release
-should add idempotent install/uninstall scripts that discover XDG paths, preserve
-the user's existing Voxtype configuration, write the absolute OSD path into a
-service drop-in, and verify the process tree after restart. It must not ship or
-rewrite a user's transcription-model settings.
+## Failure boundaries
 
-`AudioBridge.qml` and `StateReader.qml` are adapted from Voxtype 0.7.5, which is
-MIT licensed. The remaining QML composes the Signal indicator and Omarchy
-integration around those interfaces.
+- Missing Voxtype config: plugin remains dormant.
+- Built-in OSD still enabled: plugin remains dormant, avoiding duplicates.
+- Missing audio bridge or socket: the child retries without blocking the shell.
+- QML load failure: Omarchy rejects or unloads the service through its plugin
+  loader; Voxtype continues operating.
+- Plugin removal without restore: Voxtype still works, but has no visualizer
+  until the user runs the restore helper or re-enables its OSD.
+
+## Distribution
+
+The repository root is a complete Omarchy plugin and validates against manifest
+schema version 1. It is intended for installation with `omarchy plugin add` and
+listing through the independent omarchyplugins.com marketplace.

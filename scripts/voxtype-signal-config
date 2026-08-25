@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Explicit, reversible Voxtype configuration helper for the Omarchy plugin."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+MAX_CONFIG_BYTES = 512 * 1024
+
+
+def xdg_path(env_name: str, fallback: Path) -> Path:
+    value = os.environ.get(env_name, "")
+    return Path(value).expanduser() if value else fallback
+
+
+def config_path() -> Path:
+    return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "voxtype" / "config.toml"
+
+
+def state_path() -> Path:
+    return (
+        xdg_path("XDG_STATE_HOME", Path.home() / ".local" / "state")
+        / "voxtype-signal-osd"
+        / "setup.json"
+    )
+
+
+def osd_section_bounds(text: str) -> tuple[int, int] | None:
+    lines = text.splitlines(keepends=True)
+    offset = 0
+    start: int | None = None
+    for line in lines:
+        section = re.match(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$", line)
+        if section:
+            if start is not None:
+                return start, offset
+            if section.group(1).strip() == "osd":
+                start = offset + len(line)
+        offset += len(line)
+    return None if start is None else (start, len(text))
+
+
+def read_osd_enabled(text: str) -> bool:
+    bounds = osd_section_bounds(text)
+    if bounds is None:
+        return True
+    start, end = bounds
+    for line in text[start:end].splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or not stripped.startswith("enabled"):
+            continue
+        key, separator, value = stripped.partition("=")
+        if separator and key.strip() == "enabled":
+            token = value.split("#", 1)[0].strip()
+            if token in {"true", "false"}:
+                return token == "true"
+    return True
+
+
+def set_osd_enabled(text: str, enabled: bool) -> str:
+    value = "true" if enabled else "false"
+    bounds = osd_section_bounds(text)
+    if bounds is None:
+        separator = "" if not text or text.endswith("\n") else "\n"
+        return f"{text}{separator}\n[osd]\nenabled = {value}\n"
+
+    start, end = bounds
+    body = text[start:end]
+    lines = body.splitlines(keepends=True)
+    offset = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("#") and stripped.startswith("enabled"):
+            key, separator, raw_value = stripped.partition("=")
+            token = raw_value.split("#", 1)[0].strip() if separator else ""
+            if key.strip() == "enabled" and token in {"true", "false"}:
+                indent = line[: len(line) - len(line.lstrip())]
+                comment = ""
+                if "#" in raw_value:
+                    comment = "  #" + raw_value.split("#", 1)[1].rstrip("\r\n")
+                newline = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+                replacement = f"{indent}enabled = {value}{comment}{newline}"
+                return text[: start + offset] + replacement + text[start + offset + len(line) :]
+        offset += len(line)
+
+    return text[:start] + f"enabled = {value}\n" + text[start:]
+
+
+def read_config(path: Path) -> str:
+    if not path.is_file():
+        raise RuntimeError(f"Voxtype config not found: {path}")
+    if path.stat().st_size > MAX_CONFIG_BYTES:
+        raise RuntimeError(f"Voxtype config is unexpectedly large: {path}")
+    return path.read_text(encoding="utf-8")
+
+
+def atomic_write(path: Path, text: str) -> None:
+    mode = path.stat().st_mode & 0o777
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as handle:
+        temporary = Path(handle.name)
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(temporary, mode)
+    os.replace(temporary, path)
+
+
+def restart_voxtype(skip: bool) -> None:
+    if skip:
+        return
+    subprocess.run(["systemctl", "--user", "restart", "voxtype.service"], check=True)
+    subprocess.run(["systemctl", "--user", "is-active", "--quiet", "voxtype.service"], check=True)
+    time.sleep(0.75)
+    subprocess.run(["systemctl", "--user", "is-active", "--quiet", "voxtype.service"], check=True)
+
+
+def write_state(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.chmod(0o600)
+
+
+def load_state(path: Path) -> dict[str, object] | None:
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def setup(args: argparse.Namespace) -> int:
+    config = Path(args.config).expanduser() if args.config else config_path()
+    state = Path(args.state).expanduser() if args.state else state_path()
+    text = read_config(config)
+    existing = load_state(state)
+
+    if existing is None:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup = config.with_name(f"{config.name}.voxtype-signal.{timestamp}.bak")
+        shutil.copy2(config, backup)
+        existing = {
+            "backup": str(backup),
+            "config": str(config),
+            "original_osd_enabled": read_osd_enabled(text),
+            "setup_at": datetime.now(timezone.utc).isoformat(),
+        }
+        write_state(state, existing)
+
+    next_text = set_osd_enabled(text, False)
+    if next_text != text:
+        atomic_write(config, next_text)
+    restart_voxtype(args.no_restart)
+    print(f"Voxtype Signal is configured. Built-in OSD disabled in {config}")
+    print(f"Restore with: {Path(__file__).name} restore")
+    return 0
+
+
+def restore(args: argparse.Namespace) -> int:
+    state = Path(args.state).expanduser() if args.state else state_path()
+    payload = load_state(state)
+    if payload is None:
+        raise RuntimeError(f"No setup state found: {state}")
+    config = Path(args.config).expanduser() if args.config else Path(str(payload["config"]))
+    text = read_config(config)
+    original = bool(payload.get("original_osd_enabled", True))
+    next_text = set_osd_enabled(text, original)
+    if next_text != text:
+        atomic_write(config, next_text)
+    payload["restored_at"] = datetime.now(timezone.utc).isoformat()
+    write_state(state, payload)
+    restart_voxtype(args.no_restart)
+    print(f"Restored Voxtype OSD enabled={str(original).lower()} in {config}")
+    return 0
+
+
+def status(args: argparse.Namespace) -> int:
+    config = Path(args.config).expanduser() if args.config else config_path()
+    state = Path(args.state).expanduser() if args.state else state_path()
+    text = read_config(config)
+    enabled = read_osd_enabled(text)
+    print(f"config={config}")
+    print(f"built_in_osd_enabled={str(enabled).lower()}")
+    print(f"signal_ready={str(not enabled).lower()}")
+    print(f"setup_state={state if state.exists() else 'missing'}")
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description=__doc__)
+    result.add_argument("action", choices=("setup", "restore", "status"))
+    result.add_argument("--config", help="Override the Voxtype config path")
+    result.add_argument("--state", help="Override the setup-state path")
+    result.add_argument("--no-restart", action="store_true", help=argparse.SUPPRESS)
+    return result
+
+
+def main() -> int:
+    args = parser().parse_args()
+    try:
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            raise RuntimeError("run this helper as your normal desktop user, not root")
+        return {"setup": setup, "restore": restore, "status": status}[args.action](args)
+    except (OSError, RuntimeError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        print(f"voxtype-signal-config: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

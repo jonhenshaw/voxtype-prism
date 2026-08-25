@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.henshaw.voxtype-signal",
+  "name": "Voxtype Signal",
+  "version": "1.0.0",
+  "author": "Jon Henshaw",
+  "license": "MIT",
+  "description": "A compact, theme-aware recording indicator for Voxtype.",
+  "kinds": ["service"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

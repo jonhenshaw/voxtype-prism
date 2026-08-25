@@ -4,6 +4,7 @@ import Quickshell.Io
 Item {
     id: root
 
+    property bool enabled: true
     property string bridgeBinary: "/usr/bin/voxtype-audio-bridge"
     property int restartDelayMs: 1000
     property bool running: false
@@ -15,6 +16,17 @@ Item {
     signal frameReceived(real peak, real rms, bool vad, var tsMs)
     signal connected()
     signal disconnected()
+
+    onEnabledChanged: {
+        restartTimer.stop();
+        process.running = root.enabled;
+        if (!root.enabled && root.running) {
+            root.running = false;
+            root.disconnected();
+        }
+    }
+
+    Component.onCompleted: process.running = root.enabled
 
     function handleLine(line) {
         const trimmed = String(line || "").trim();
@@ -50,7 +62,7 @@ Item {
     Process {
         id: process
         command: [root.bridgeBinary]
-        running: true
+        running: false
 
         stdout: SplitParser {
             splitMarker: "\n"
@@ -63,7 +75,7 @@ Item {
                 root.running = false;
                 root.disconnected();
             }
-            restartTimer.restart();
+            if (root.enabled) restartTimer.restart();
         }
     }
 
@@ -71,6 +83,6 @@ Item {
         id: restartTimer
         interval: root.restartDelayMs
         repeat: false
-        onTriggered: if (!process.running) process.running = true
+        onTriggered: if (root.enabled && !process.running) process.running = true
     }
 }
