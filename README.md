@@ -25,13 +25,13 @@ An Omarchy-native, theme-aware recording indicator for
 Add and enable the plugin:
 
 ```bash
-omarchy plugin add https://github.com/henshaw/voxtype-signal-osd.git --enable
+omarchy plugin add https://github.com/jonhenshaw/voxtype-signal-osd.git --enable
 ```
 
 Then explicitly hand visualizer ownership from Voxtype to the plugin:
 
 ```bash
-~/.config/omarchy/plugins/io.github.henshaw.voxtype-signal/scripts/voxtype-signal-config setup
+~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-signal/scripts/voxtype-signal-config setup
 ```
 
 The setup helper:
@@ -48,7 +48,7 @@ built-in Voxtype indicator.
 Check setup state at any time:
 
 ```bash
-~/.config/omarchy/plugins/io.github.henshaw.voxtype-signal/scripts/voxtype-signal-config status
+~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-signal/scripts/voxtype-signal-config status
 ```
 
 ## Remove
@@ -57,8 +57,8 @@ Restore the exact OSD-enabled state recorded during setup, then remove the
 plugin:
 
 ```bash
-~/.config/omarchy/plugins/io.github.henshaw.voxtype-signal/scripts/voxtype-signal-config restore
-omarchy plugin remove io.github.henshaw.voxtype-signal
+~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-signal/scripts/voxtype-signal-config restore
+omarchy plugin remove io.github.jonhenshaw.voxtype-signal
 ```
 
 The helper restores only `[osd] enabled`; it never rolls back or overwrites the

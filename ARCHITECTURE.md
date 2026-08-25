@@ -5,7 +5,7 @@ Voxtype Signal is an Omarchy `service` plugin. It runs inside the existing
 
 ```text
 omarchy-shell
-  └─ io.github.henshaw.voxtype-signal / Service.qml
+  └─ io.github.jonhenshaw.voxtype-signal / Service.qml
       ├─ VoxtypeConfig.qml   gates rendering until stock OSD is disabled
       ├─ StateReader.qml     watches idle/recording/transcribing state
       ├─ AudioBridge.qml     reads live peak/RMS frames
