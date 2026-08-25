@@ -55,7 +55,7 @@ Item {
         id: signal
         daemonState: voxtypeConfig.configured ? stateReader.daemonState : "idle"
         audio: audioBridge
-        palette: palette
+        themePalette: palette
         targetScreen: root.activeScreen
     }
 

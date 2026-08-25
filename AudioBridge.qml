@@ -4,7 +4,6 @@ import Quickshell.Io
 Item {
     id: root
 
-    property bool enabled: true
     property string bridgeBinary: "/usr/bin/voxtype-audio-bridge"
     property int restartDelayMs: 1000
     property bool running: false

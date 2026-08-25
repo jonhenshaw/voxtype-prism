@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Effects
 import Quickshell
@@ -8,7 +10,7 @@ Item {
 
     property string daemonState: "idle"
     property var audio: null
-    property var palette: null
+    property var themePalette: null
     property var targetScreen: null
     property bool motionEnabled: true
 
@@ -21,11 +23,11 @@ Item {
 
     readonly property bool levelVisible: phase === "recording" || phase === "streaming"
     readonly property color stateColor: {
-        if (!palette) return "#7aa2f7";
-        if (phase === "recording") return palette.recording;
-        if (phase === "transcribing") return palette.transcribing;
-        if (phase === "ready") return palette.ready;
-        return palette.accent;
+        if (!themePalette) return "#7aa2f7";
+        if (phase === "recording") return themePalette.recording;
+        if (phase === "transcribing") return themePalette.transcribing;
+        if (phase === "ready") return themePalette.ready;
+        return themePalette.accent;
     }
     readonly property string icon: {
         if (phase === "recording" || phase === "streaming") return "\uf130";
@@ -166,7 +168,7 @@ Item {
             height: 40
             anchors.centerIn: parent
             radius: 14
-            color: root.withAlpha(root.palette ? root.palette.panel : "#13141c", 0.96)
+            color: root.withAlpha(root.themePalette ? root.themePalette.panel : "#13141c", 0.96)
             border.width: 1
             border.color: root.withAlpha(root.stateColor, 0.62)
             opacity: root.presence
@@ -273,7 +275,7 @@ Item {
                     verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignRight
                     text: root.label
-                    color: root.palette ? root.palette.foreground : "#c0caf5"
+                    color: root.themePalette ? root.themePalette.foreground : "#c0caf5"
                     font.family: "JetBrainsMono Nerd Font"
                     font.pixelSize: 9
                     font.weight: Font.Medium
