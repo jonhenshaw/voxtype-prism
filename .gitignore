@@ -1,0 +1,7 @@
+*.bak
+*.log
+*.qslog
+__pycache__/
+*.pyc
+.DS_Store
+deployment/
