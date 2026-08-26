@@ -1,9 +1,10 @@
-# Voxtype Signal
+# Voxtype Prism
 
-An Omarchy-native, theme-aware recording indicator for
-[Voxtype](https://github.com/peteonrails/voxtype).
+An Omarchy-native enhancement layer for
+[Voxtype](https://github.com/peteonrails/voxtype). The first release ships
+**Signal**, a compact, theme-aware recording indicator.
 
-![Voxtype Signal recording indicator](preview.png)
+![Voxtype Prism Signal recording indicator](preview.png)
 
 - Compact 156 × 40 px pill with a tightly diffused micro-halo.
 - Real microphone levels from Voxtype's audio bridge.
@@ -25,13 +26,13 @@ An Omarchy-native, theme-aware recording indicator for
 Add and enable the plugin:
 
 ```bash
-omarchy plugin add https://github.com/jonhenshaw/voxtype-signal-osd.git --enable
+omarchy plugin add https://github.com/jonhenshaw/voxtype-prism.git --enable
 ```
 
 Then explicitly hand visualizer ownership from Voxtype to the plugin:
 
 ```bash
-~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-signal/scripts/voxtype-signal-config setup
+~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-config setup
 ```
 
 The setup helper:
@@ -42,13 +43,13 @@ The setup helper:
 4. Changes only `[osd] enabled` to `false` using an atomic write.
 5. Restarts and verifies `voxtype.service`.
 
-Until setup is completed, Signal stays dormant so it never duplicates the
+Until setup is completed, Prism stays dormant so it never duplicates the
 built-in Voxtype indicator.
 
 Check setup state at any time:
 
 ```bash
-~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-signal/scripts/voxtype-signal-config status
+~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-config status
 ```
 
 ## Remove
@@ -57,8 +58,8 @@ Restore the exact OSD-enabled state recorded during setup, then remove the
 plugin:
 
 ```bash
-~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-signal/scripts/voxtype-signal-config restore
-omarchy plugin remove io.github.jonhenshaw.voxtype-signal
+~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-config restore
+omarchy plugin remove io.github.jonhenshaw.voxtype-prism
 ```
 
 The helper restores only `[osd] enabled`; it never rolls back or overwrites the

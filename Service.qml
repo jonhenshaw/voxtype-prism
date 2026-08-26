@@ -34,7 +34,7 @@ Item {
     }
 
     IpcHandler {
-        target: "voxtype-signal"
+        target: "voxtype-prism"
 
         function status(): string {
             return JSON.stringify({
@@ -61,7 +61,7 @@ Item {
 
     Component.onCompleted: {
         if (!voxtypeConfig.configured) {
-            console.warn("voxtype-signal: setup required; run scripts/voxtype-signal-config setup");
+            console.warn("voxtype-prism: setup required; run scripts/voxtype-prism-config setup");
         }
     }
 }

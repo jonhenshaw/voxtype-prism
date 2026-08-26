@@ -136,7 +136,7 @@ Item {
         color: "transparent"
         exclusionMode: ExclusionMode.Ignore
         mask: Region {}
-        WlrLayershell.namespace: "voxtype-signal"
+        WlrLayershell.namespace: "voxtype-prism"
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 

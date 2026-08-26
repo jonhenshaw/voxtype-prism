@@ -1,11 +1,12 @@
 # Architecture
 
-Voxtype Signal is an Omarchy `service` plugin. It runs inside the existing
-`omarchy-shell` process and never launches a second Quickshell instance.
+Voxtype Prism is an Omarchy `service` plugin. It runs inside the existing
+`omarchy-shell` process and never launches a second Quickshell instance. This
+release ships Signal as its first visual style.
 
 ```text
 omarchy-shell
-  └─ io.github.jonhenshaw.voxtype-signal / Service.qml
+  └─ io.github.jonhenshaw.voxtype-prism / Service.qml
       ├─ VoxtypeConfig.qml   gates rendering until stock OSD is disabled
       ├─ StateReader.qml     watches idle/recording/transcribing state
       ├─ AudioBridge.qml     reads live peak/RMS frames
@@ -21,24 +22,28 @@ voxtype.service
 
 Voxtype 0.7.5 starts its audio-level broadcaster regardless of whether the
 built-in OSD child is enabled. Only spawning that child is gated by
-`[osd] enabled`. Signal therefore sets the built-in OSD to disabled through an
+`[osd] enabled`. Prism therefore sets the built-in OSD to disabled through an
 explicit, reversible helper while retaining the same live audio feed.
 
 The plugin itself never writes Voxtype configuration. `VoxtypeConfig.qml` reads
 the file and fails closed: when the stock OSD is enabled or the config is
-missing, Signal renders nothing and does not start its audio-bridge child.
+missing, Prism renders nothing and does not start its audio-bridge child.
 
 ## Lifecycle
 
 Omarchy loads `Service.qml` once when the plugin is enabled. Disabling or
 removing the plugin destroys the service, its PanelWindow, and the audio bridge.
 Voxtype retains responsibility for speech capture, transcription, hotkeys, and
-output. Signal is presentation-only.
+output. Prism is presentation-only in this release.
 
 The helper under `scripts/` is user-invoked. It keeps a small state record under
-`$XDG_STATE_HOME/voxtype-signal-osd/` and uses an atomic replacement to change
+`$XDG_STATE_HOME/voxtype-prism/` and uses an atomic replacement to change
 only the scoped `[osd] enabled` key. Restore uses the recorded original value,
 not a whole-file rollback, so later user changes survive.
+
+The helper also recognizes the pre-release `voxtype-signal-osd` state path so
+existing local setup state can be migrated without losing the original OSD
+setting.
 
 ## Failure boundaries
 

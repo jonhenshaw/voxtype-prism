@@ -30,9 +30,23 @@ def config_path() -> Path:
 def state_path() -> Path:
     return (
         xdg_path("XDG_STATE_HOME", Path.home() / ".local" / "state")
+        / "voxtype-prism"
+        / "setup.json"
+    )
+
+
+def legacy_state_path() -> Path:
+    return (
+        xdg_path("XDG_STATE_HOME", Path.home() / ".local" / "state")
         / "voxtype-signal-osd"
         / "setup.json"
     )
+
+
+def existing_state_path() -> Path:
+    primary = state_path()
+    legacy = legacy_state_path()
+    return primary if primary.exists() or not legacy.exists() else legacy
 
 
 def osd_section_bounds(text: str) -> tuple[int, int] | None:
@@ -132,24 +146,24 @@ def check_runtime(skip: bool) -> None:
         if shutil.which(binary) is None:
             raise RuntimeError(f"required command not found: {binary}")
     probe = subprocess.run(
-        ["omarchy-shell", "voxtype-signal", "status"],
+        ["omarchy-shell", "voxtype-prism", "status"],
         check=False,
         capture_output=True,
         text=True,
     )
     if probe.returncode != 0:
         raise RuntimeError(
-            "Voxtype Signal is not loaded; enable the plugin before running setup"
+            "Voxtype Prism is not loaded; enable the plugin before running setup"
         )
     json.loads(probe.stdout)
 
 
-def wait_signal_ready(skip: bool) -> None:
+def wait_prism_ready(skip: bool) -> None:
     if skip:
         return
     for _ in range(30):
         probe = subprocess.run(
-            ["omarchy-shell", "voxtype-signal", "status"],
+            ["omarchy-shell", "voxtype-prism", "status"],
             check=False,
             capture_output=True,
             text=True,
@@ -162,8 +176,6 @@ def wait_signal_ready(skip: bool) -> None:
                 pass
         time.sleep(0.2)
     raise RuntimeError("plugin did not become ready after Voxtype restarted")
-    time.sleep(0.75)
-    subprocess.run(["systemctl", "--user", "is-active", "--quiet", "voxtype.service"], check=True)
 
 
 def write_state(path: Path, payload: dict[str, object]) -> None:
@@ -185,9 +197,15 @@ def setup(args: argparse.Namespace) -> int:
     text = read_config(config)
     existing = load_state(state)
 
+    if existing is None and not args.state:
+        legacy = load_state(legacy_state_path())
+        if legacy is not None:
+            existing = legacy
+            write_state(state, legacy)
+
     if existing is None:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        backup = config.with_name(f"{config.name}.voxtype-signal.{timestamp}.bak")
+        backup = config.with_name(f"{config.name}.voxtype-prism.{timestamp}.bak")
         shutil.copy2(config, backup)
         existing = {
             "backup": str(backup),
@@ -201,14 +219,14 @@ def setup(args: argparse.Namespace) -> int:
     if next_text != text:
         atomic_write(config, next_text)
     restart_voxtype(args.no_restart)
-    wait_signal_ready(args.no_restart)
-    print(f"Voxtype Signal is configured. Built-in OSD disabled in {config}")
+    wait_prism_ready(args.no_restart)
+    print(f"Voxtype Prism is configured. Built-in OSD disabled in {config}")
     print(f"Restore with: {Path(__file__).name} restore")
     return 0
 
 
 def restore(args: argparse.Namespace) -> int:
-    state = Path(args.state).expanduser() if args.state else state_path()
+    state = Path(args.state).expanduser() if args.state else existing_state_path()
     payload = load_state(state)
     if payload is None:
         raise RuntimeError(f"No setup state found: {state}")
@@ -227,12 +245,12 @@ def restore(args: argparse.Namespace) -> int:
 
 def status(args: argparse.Namespace) -> int:
     config = Path(args.config).expanduser() if args.config else config_path()
-    state = Path(args.state).expanduser() if args.state else state_path()
+    state = Path(args.state).expanduser() if args.state else existing_state_path()
     text = read_config(config)
     enabled = read_osd_enabled(text)
     print(f"config={config}")
     print(f"built_in_osd_enabled={str(enabled).lower()}")
-    print(f"signal_ready={str(not enabled).lower()}")
+    print(f"prism_ready={str(not enabled).lower()}")
     print(f"setup_state={state if state.exists() else 'missing'}")
     return 0
 
@@ -253,7 +271,7 @@ def main() -> int:
             raise RuntimeError("run this helper as your normal desktop user, not root")
         return {"setup": setup, "restore": restore, "status": status}[args.action](args)
     except (OSError, RuntimeError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
-        print(f"voxtype-signal-config: {error}", file=sys.stderr)
+        print(f"voxtype-prism-config: {error}", file=sys.stderr)
         return 1
 
 

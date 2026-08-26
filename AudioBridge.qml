@@ -35,7 +35,7 @@ Item {
         try {
             payload = JSON.parse(trimmed);
         } catch (error) {
-            console.warn("voxtype-signal: ignored non-JSON audio bridge output");
+            console.warn("voxtype-prism: ignored non-JSON audio bridge output");
             return;
         }
 

@@ -1,4 +1,4 @@
-# Signal OSD design QA
+# Voxtype Prism: Signal style design QA
 
 Date: 2026-08-25
 

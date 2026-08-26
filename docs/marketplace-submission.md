@@ -3,7 +3,7 @@
 ## Issue title
 
 ```text
-[Plugin]: Voxtype Signal
+[Plugin]: Voxtype Prism
 ```
 
 ## Issue body
@@ -11,7 +11,7 @@
 ```markdown
 ### Repository URL
 
-https://github.com/jonhenshaw/voxtype-signal-osd
+https://github.com/jonhenshaw/voxtype-prism
 
 ### Category
 
@@ -27,7 +27,7 @@ _No response_
 
 ### Maintainer notes
 
-Voxtype Signal is a presentation-only Omarchy service for the Voxtype dictation daemon. It has no network access, credentials, analytics, or privileged commands. An explicit reversible helper backs up the Voxtype config and changes only `[osd] enabled` so the plugin never duplicates Voxtype's built-in visualizer. The helper restores the recorded original value before removal.
+Voxtype Prism is an Omarchy-native enhancement layer for the Voxtype dictation daemon. Its first release ships Signal, a compact theme-aware recording indicator. It has no network access, credentials, analytics, or privileged commands. An explicit reversible helper backs up the Voxtype config and changes only `[osd] enabled` so the plugin never duplicates Voxtype's built-in visualizer. The helper restores the recorded original value before removal.
 
 ### Submission checklist
 

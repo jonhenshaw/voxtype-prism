@@ -3,20 +3,31 @@ from __future__ import annotations
 import importlib.util
 import argparse
 from importlib.machinery import SourceFileLoader
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "voxtype-signal-config"
-LOADER = SourceFileLoader("voxtype_signal_config", str(SCRIPT))
-SPEC = importlib.util.spec_from_loader("voxtype_signal_config", LOADER)
+SCRIPT = Path(__file__).parents[1] / "scripts" / "voxtype-prism-config"
+LOADER = SourceFileLoader("voxtype_prism_config", str(SCRIPT))
+SPEC = importlib.util.spec_from_loader("voxtype_prism_config", LOADER)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
 class ConfigEditingTests(unittest.TestCase):
+    def test_pre_release_state_path_is_preserved_for_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = root / "voxtype-signal-osd" / "setup.json"
+            legacy.parent.mkdir(parents=True)
+            legacy.write_text("{}\n", encoding="utf-8")
+            with patch.dict(os.environ, {"XDG_STATE_HOME": str(root)}):
+                self.assertEqual(MODULE.existing_state_path(), legacy)
+
     def test_absent_osd_section_appends_one(self) -> None:
         original = 'engine = "parakeet"\n'
         changed = MODULE.set_osd_enabled(original, False)
