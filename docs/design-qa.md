@@ -27,6 +27,13 @@ The reference and installed recording states were compared at equivalent logical
 
 ## Functional checks
 
+- The standard-install activation card loaded in Quickshell at `336 × 112`
+  logical pixels, bottom-centred with a 24 px margin, under the dedicated
+  `voxtype-prism-activation` namespace. It accepts pointer input only across
+  that small surface and requests no keyboard focus.
+- Activation remains explicit: only the card's **Activate** button starts the
+  audited setup helper. While the card is visible, Signal and its audio bridge
+  remain dormant and VoxType's stock indicator stays active.
 - `Service.qml` loads as an enabled Omarchy `service` under Quickshell 0.3.1 with no plugin QML/runtime errors.
 - Before setup, the service reported `configured: false`, stayed hidden, and did not start its audio bridge while Voxtype's stock OSD remained enabled.
 - After explicit setup, the service reported `configured: true` and Voxtype ran without an OSD child.

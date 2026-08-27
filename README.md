@@ -32,16 +32,15 @@ An Omarchy-native enhancement layer for
 Add and enable the plugin:
 
 ```bash
-omarchy plugin add https://github.com/jonhenshaw/voxtype-prism.git --enable
+omarchy plugin add https://github.com/jonhenshaw/voxtype-prism.git --enable --yes
 ```
 
-Then explicitly hand visualizer ownership from Voxtype to the plugin:
+Prism immediately shows a small **Activate Voxtype Prism** card. Click
+**Activate** to explicitly hand visualizer ownership from Voxtype to Prism.
+The action is part of the plugin, so standard installation requires no second
+terminal command.
 
-```bash
-~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-config setup
-```
-
-The setup helper:
+The activation action:
 
 1. Reads the existing Voxtype config without changing unrelated settings.
 2. Records whether Voxtype's built-in OSD was enabled.
@@ -49,8 +48,15 @@ The setup helper:
 4. Changes only `[osd] enabled` to `false` using an atomic write.
 5. Restarts and verifies `voxtype.service`.
 
-Until setup is completed, Prism stays dormant so it never duplicates the
-built-in Voxtype indicator.
+Signal stays dormant while the activation card is visible, so Prism never
+duplicates the built-in Voxtype indicator.
+
+If the activation card cannot be used, the same audited action remains
+available as a fallback:
+
+```bash
+~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-config setup
+```
 
 Check setup state at any time:
 
@@ -60,12 +66,12 @@ Check setup state at any time:
 
 ## Remove
 
-Restore the exact OSD-enabled state recorded during setup, then remove the
-plugin:
+Restore the exact OSD-enabled state recorded during activation, then remove
+Prism:
 
 ```bash
 ~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-config restore
-omarchy plugin remove io.github.jonhenshaw.voxtype-prism
+omarchy plugin remove io.github.jonhenshaw.voxtype-prism --yes
 ```
 
 The helper restores only `[osd] enabled`; it never rolls back or overwrites the

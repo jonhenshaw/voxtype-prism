@@ -101,6 +101,15 @@ class BoundedReaderTests(unittest.TestCase):
         self.assertIn("SplitParser", boundary_qml)
         self.assertIn("voxtype-prism-read", boundary_qml)
 
+    def test_standard_install_wires_explicit_activation(self) -> None:
+        activation_qml = (ROOT / "PrismActivation.qml").read_text(encoding="utf-8")
+        service_qml = (ROOT / "Service.qml").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn('command: [root.helperPath, "setup"]', activation_qml)
+        self.assertIn("onClicked: root.activate()", activation_qml)
+        self.assertIn("PrismActivation {", service_qml)
+        self.assertIn("requires no second\nterminal command", readme)
+
 
 if __name__ == "__main__":
     unittest.main()
