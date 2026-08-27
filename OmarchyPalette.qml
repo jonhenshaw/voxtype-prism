@@ -1,10 +1,8 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 
-// Minimal Omarchy palette reader for this standalone Quickshell config.
-// Theme swaps replace the theme directory, so theme.name is the stable beacon
-// that tells us to reload colors.toml from its new target.
+// Minimal Omarchy palette reader. The bundled reader polls across atomic theme
+// swaps and emits only a small allowlisted JSON color map into omarchy-shell.
 QtObject {
     id: root
 
@@ -12,7 +10,6 @@ QtObject {
     readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (home + "/.local/state")
     readonly property string themeDir: stateHome + "/omarchy/current/theme"
     readonly property string colorsPath: themeDir + "/colors.toml"
-    readonly property string themeNamePath: stateHome + "/omarchy/current/theme.name"
 
     property color background: "#1a1b26"
     property color panel: "#13141c"
@@ -24,11 +21,12 @@ QtObject {
     property color ready: "#9ece6a"
 
     function load(raw) {
-        const values = {};
-        const lines = String(raw || "").split("\n");
-        for (let i = 0; i < lines.length; i++) {
-            const match = lines[i].match(/^\s*([A-Za-z0-9_-]+)\s*=\s*["']?(#[0-9A-Fa-f]{6})/);
-            if (match) values[match[1]] = match[2];
+        let values = {};
+        try {
+            const parsed = JSON.parse(String(raw || "{}"));
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) values = parsed;
+        } catch (error) {
+            return;
         }
 
         root.background = values.background || values.color0 || root.background;
@@ -41,21 +39,12 @@ QtObject {
         root.ready = values.green || values.color2 || root.ready;
     }
 
-    property FileView colorsFile: FileView {
+    property BoundedValueReader paletteStatus: BoundedValueReader {
+        id: paletteStatus
+        mode: "palette"
         path: root.colorsPath
-        watchChanges: true
-        printErrors: false
-        onLoaded: root.load(text())
-        onFileChanged: reload()
-    }
-
-    property FileView themeMarker: FileView {
-        path: root.themeNamePath
-        watchChanges: true
-        printErrors: false
-        onFileChanged: {
-            reload();
-            root.colorsFile.reload();
-        }
+        intervalMs: 300
+        fallbackValue: "{}"
+        onValueChanged: root.load(value)
     }
 }

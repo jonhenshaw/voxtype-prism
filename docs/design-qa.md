@@ -39,7 +39,7 @@ The reference and installed recording states were compared at equivalent logical
 - The final deployed micro-halo is tightly bounded to 6 px at 8% opacity; no long solid capsule remains.
 - Disable/re-enable unloaded and recreated the service and audio bridge cleanly.
 - The explicit restore helper returned Voxtype to its original OSD state; official plugin removal and atomic `omarchy plugin add` installation both completed successfully.
-- Five isolated config-helper tests pass, including scoped edits, comment preservation, missing-section creation, and exact enabled-state restoration.
+- The bounded-reader and config-helper regression suites pass, including scoped edits, exact enabled-state restoration, oversized-file rejection, non-regular-file rejection, and planted-symlink read/write cases.
 - Final process tree contains one Voxtype daemon and the existing Omarchy shell only; there is no standalone Signal Quickshell process or Voxtype OSD child.
 - Two shell crashes during locked-session lifecycle testing were traced to Omarchy's lock recovery fatal (`Tried to show lockscreen surfaces without active lock`) before Signal's service was loaded. No Signal QML frame or runtime error appeared in either crash timeline.
 
