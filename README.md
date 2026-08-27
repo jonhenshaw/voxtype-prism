@@ -206,8 +206,9 @@ tests/capture-workbench.sh /tmp/voxtype-prism-workbench.png
 git diff --check
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for lifecycle and failure boundaries and
-[docs/design-qa.md](docs/design-qa.md) for the verified visual states.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for lifecycle and failure boundaries,
+[design-qa.md](design-qa.md) for the Refinement Workbench comparison, and
+[docs/design-qa.md](docs/design-qa.md) for the runtime indicator comparison.
 
 ## License and attribution
 
