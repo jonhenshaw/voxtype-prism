@@ -24,6 +24,7 @@ Item {
     readonly property string pluginId: manifest && manifest.id
         ? String(manifest.id) : "io.github.jonhenshaw.voxtype-prism"
     property alias windowVisible: window.visible
+    readonly property Item renderTarget: focusScope
     readonly property bool opened: window.visible
 
     property int selectedTab: 0
@@ -893,7 +894,6 @@ Item {
                                                 : (backend.errorMessage ? backend.errorMessage
                                                 : (root.testOutputStale ? "Result is stale · test the current draft again"
                                                 : (backend.testOutput ? "Refinement completed"
-                                                + (backend.testModel ? " · " + backend.testModel : "")
                                                 + (backend.testElapsedMs > 0 ? " · " + backend.testElapsedMs + " ms" : "") : "")))
                                             visible: text !== ""
                                             color: backend.errorMessage || root.testOutputStale

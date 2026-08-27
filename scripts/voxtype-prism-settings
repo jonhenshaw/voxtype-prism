@@ -28,6 +28,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+# This helper imports the extensionless refine child as a private backend.
+# Local Omarchy plugin trees are watched for changes, so a generated .pyc would
+# otherwise look like a plugin edit and cause a reload loop.
+sys.dont_write_bytecode = True
+
+
 PROTOCOL = 1
 MAX_REQUEST_BYTES = 128 * 1024
 MAX_VOXTYPE_CONFIG_BYTES = 512 * 1024

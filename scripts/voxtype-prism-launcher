@@ -12,11 +12,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import shutil
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -30,7 +32,7 @@ Version=1.0
 Name=Voxtype Configuration
 GenericName=Voice-to-Text Settings
 Comment=Configure Voxtype Prism refinement, prompts, dictionary, and indicators
-Exec=bash -c "IFS=; set -f; plugin=\\${{XDG_CONFIG_HOME:-\\$HOME/.config}}/omarchy/plugins/{PLUGIN_ID}/scripts/voxtype-prism-launcher; if [[ -x \\$plugin ]]; then exec \\$plugin open; fi; exec /usr/bin/voxtype-configure-launcher"
+Exec=/usr/bin/bash -c "IFS=; set -f; plugin=\\\\${{XDG_CONFIG_HOME:-\\\\$HOME/.config}}/omarchy/plugins/{PLUGIN_ID}/scripts/voxtype-prism-launcher; if [[ -x \\\\$plugin ]]; then exec \\\\$plugin open; fi; exec /usr/bin/voxtype-configure-launcher"
 Icon=audio-input-microphone
 Categories=Settings;
 Keywords=voxtype;voice;dictation;transcription;refinement;prompt;indicator;settings;configuration;
@@ -241,16 +243,35 @@ def remove_owned(path: Path) -> bool:
     return True
 
 
-def apply_window_rules() -> None:
-    hyprctl = os.environ.get("VOXTYPE_PRISM_HYPRCTL", "").strip() or shutil.which("hyprctl")
+def hyprctl_path() -> str | None:
+    return os.environ.get("VOXTYPE_PRISM_HYPRCTL", "").strip() or shutil.which("hyprctl")
+
+
+def install_window_rule() -> None:
+    hyprctl = hyprctl_path()
     if not hyprctl:
         return
-    rules = (
+    expression = (
+        "if voxtype_prism_window_rule then "
+        "voxtype_prism_window_rule:set_enabled(false) end; "
+        "voxtype_prism_window_rule = hl.window_rule({ "
+        'match = { title = "^(Voxtype Prism)$" }, '
+        "float = true, center = true, size = { 1120, 760 } })"
+    )
+    result = subprocess.run(
+        [hyprctl, "eval", expression],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        timeout=2,
+    )
+    if result.returncode == 0:
+        return
+    for rule in (
         "float, title:^(Voxtype Prism)$",
         "size 1120 760, title:^(Voxtype Prism)$",
         "center, title:^(Voxtype Prism)$",
-    )
-    for rule in rules:
+    ):
         subprocess.run(
             [hyprctl, "keyword", "windowrulev2", rule],
             stdout=subprocess.DEVNULL,
@@ -258,6 +279,74 @@ def apply_window_rules() -> None:
             check=False,
             timeout=2,
         )
+
+
+def run_hypr_dispatch(hyprctl: str, expression: str, legacy: list[str]) -> None:
+    result = subprocess.run(
+        [hyprctl, "dispatch", expression],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        timeout=2,
+    )
+    if result.returncode != 0:
+        subprocess.run(
+            [hyprctl, "dispatch", *legacy],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2,
+        )
+
+
+def apply_window_rules() -> None:
+    hyprctl = hyprctl_path()
+    if not hyprctl:
+        return
+    address = ""
+    floating = False
+    for _ in range(24):
+        try:
+            result = subprocess.run(
+                [hyprctl, "clients", "-j"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=2,
+            )
+            clients = json.loads(result.stdout) if result.returncode == 0 else []
+            match = next(
+                (client for client in clients if client.get("title") == "Voxtype Prism"),
+                None,
+            )
+            candidate = str(match.get("address", "")) if match else ""
+            if re.fullmatch(r"0x[0-9a-fA-F]+", candidate):
+                address = candidate
+                floating = bool(match.get("floating", False))
+                break
+        except (json.JSONDecodeError, OSError, subprocess.SubprocessError, TypeError):
+            return
+        time.sleep(0.05)
+    if not address:
+        return
+
+    target = f"address:{address}"
+    if not floating:
+        run_hypr_dispatch(
+            hyprctl,
+            f'hl.dsp.window.float({{ window = "{target}", action = "toggle" }})',
+            ["togglefloating", target],
+        )
+    run_hypr_dispatch(
+        hyprctl,
+        f'hl.dsp.window.resize({{ window = "{target}", x = 1120, y = 760 }})',
+        ["resizewindowpixel", f"exact 1120 760,{target}"],
+    )
+    run_hypr_dispatch(
+        hyprctl,
+        f'hl.dsp.window.center({{ window = "{target}" }})',
+        ["centerwindow", target],
+    )
 
 
 def stock_launcher() -> str:
@@ -271,7 +360,7 @@ def exec_stock() -> int:
 
 
 def open_panel() -> int:
-    apply_window_rules()
+    install_window_rule()
     shell = os.environ.get("VOXTYPE_PRISM_OMARCHY_SHELL", "").strip() or shutil.which("omarchy-shell")
     if shell:
         try:
@@ -283,6 +372,7 @@ def open_panel() -> int:
                 timeout=4,
             )
             if result.returncode == 0 and result.stdout.strip().lower() in {"true", "ok"}:
+                apply_window_rules()
                 return 0
         except (OSError, subprocess.TimeoutExpired):
             pass
@@ -318,6 +408,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.action == "advanced":
             return exec_stock()
         if args.action == "install":
+            install_window_rule()
             changed = atomic_install(target)
             print(json.dumps({"ok": True, "changed": changed, **status(target)}, separators=(",", ":")))
             return 0

@@ -28,6 +28,7 @@ class LauncherTests(unittest.TestCase):
             self.assertIn(MODULE.MARKER, target.read_text(encoding="utf-8").splitlines())
             self.assertEqual(MODULE.status(target)["state"], "prism")
             self.assertEqual(list(target.parent.glob("*.tmp.*")), [])
+            self.assertIn(r"\\$", target.read_text(encoding="utf-8"))
 
     def test_install_refuses_unowned_regular_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -130,24 +131,108 @@ class LauncherTests(unittest.TestCase):
 
     def test_open_accepts_only_affirmative_shell_result(self) -> None:
         completed = __import__("subprocess").CompletedProcess([], 0, stdout="true\n", stderr="")
-        with patch.object(MODULE, "apply_window_rules"), patch.object(
+        with patch.object(MODULE, "install_window_rule"), patch.object(
+            MODULE, "apply_window_rules"
+        ) as window_rules, patch.object(
             MODULE.shutil, "which", return_value="/usr/bin/omarchy-shell"
         ), patch.object(MODULE.subprocess, "run", return_value=completed) as runner, patch.object(
             MODULE, "exec_stock"
         ) as fallback:
             self.assertEqual(MODULE.open_panel(), 0)
             fallback.assert_not_called()
+            window_rules.assert_called_once_with()
             self.assertEqual(runner.call_args.args[0][-2:], [MODULE.PLUGIN_ID, "{}"])
 
     def test_open_falls_back_when_panel_is_unavailable(self) -> None:
         completed = __import__("subprocess").CompletedProcess([], 0, stdout="unknown\n", stderr="")
-        with patch.object(MODULE, "apply_window_rules"), patch.object(
+        with patch.object(MODULE, "install_window_rule"), patch.object(
+            MODULE, "apply_window_rules"
+        ), patch.object(
             MODULE.shutil, "which", return_value="/usr/bin/omarchy-shell"
         ), patch.object(MODULE.subprocess, "run", return_value=completed), patch.object(
             MODULE, "exec_stock", return_value=7
         ) as fallback:
             self.assertEqual(MODULE.open_panel(), 7)
             fallback.assert_called_once_with()
+
+    def test_window_rule_uses_current_hyprland_lua_api(self) -> None:
+        subprocess = __import__("subprocess")
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with patch.dict(os.environ, {"VOXTYPE_PRISM_HYPRCTL": "/fake/hyprctl"}), patch.object(
+            MODULE.subprocess, "run", return_value=completed
+        ) as runner:
+            MODULE.install_window_rule()
+
+        command = runner.call_args.args[0]
+        self.assertEqual(command[:2], ["/fake/hyprctl", "eval"])
+        self.assertIn("hl.window_rule", command[2])
+        self.assertIn('title = "^(Voxtype Prism)$"', command[2])
+        self.assertIn("size = { 1120, 760 }", command[2])
+
+    def test_current_hyprland_dispatch_floats_sizes_and_centers_window(self) -> None:
+        subprocess = __import__("subprocess")
+
+        def run(command, **kwargs):
+            if command[1:] == ["clients", "-j"]:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps([
+                        {
+                            "address": "0xabc123",
+                            "title": "Voxtype Prism",
+                            "floating": False,
+                        }
+                    ]),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        with patch.dict(os.environ, {"VOXTYPE_PRISM_HYPRCTL": "/fake/hyprctl"}), patch.object(
+            MODULE.subprocess, "run", side_effect=run
+        ) as runner:
+            MODULE.apply_window_rules()
+
+        commands = [call.args[0] for call in runner.call_args_list]
+        expressions = [command[2] for command in commands if command[1] == "dispatch"]
+        self.assertEqual(len(expressions), 3)
+        self.assertIn("hl.dsp.window.float", expressions[0])
+        self.assertIn("address:0xabc123", expressions[0])
+        self.assertIn("x = 1120, y = 760", expressions[1])
+        self.assertIn("hl.dsp.window.center", expressions[2])
+        self.assertFalse(any("keyword" in command for command in commands))
+
+    def test_current_hyprland_dispatch_does_not_toggle_floating_window(self) -> None:
+        subprocess = __import__("subprocess")
+
+        def run(command, **kwargs):
+            if command[1:] == ["clients", "-j"]:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps([
+                        {
+                            "address": "0xdef456",
+                            "title": "Voxtype Prism",
+                            "floating": True,
+                        }
+                    ]),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        with patch.dict(os.environ, {"VOXTYPE_PRISM_HYPRCTL": "/fake/hyprctl"}), patch.object(
+            MODULE.subprocess, "run", side_effect=run
+        ) as runner:
+            MODULE.apply_window_rules()
+
+        expressions = [
+            call.args[0][2]
+            for call in runner.call_args_list
+            if call.args[0][1] == "dispatch"
+        ]
+        self.assertEqual(len(expressions), 2)
+        self.assertFalse(any("hl.dsp.window.float" in expression for expression in expressions))
 
 
 if __name__ == "__main__":
