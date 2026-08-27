@@ -201,6 +201,7 @@ values to QML.
 python3 -m unittest discover -s tests -v
 omarchy plugin validate .
 tests/qml-lint.sh
+tests/workbench-smoke.sh
 git diff --check
 ```
 

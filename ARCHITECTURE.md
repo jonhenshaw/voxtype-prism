@@ -66,10 +66,11 @@ the Python helpers.
 
 ## Lifecycle
 
-Omarchy loads `Service.qml` once when the plugin is enabled and loads
-`SettingsPanel.qml` only while the panel is summoned. Disabling or removing the
-plugin destroys the service, indicator PanelWindow, settings FloatingWindow,
-and audio bridge.
+Omarchy loads `Service.qml` once when the plugin is enabled. It keeps the light
+`SettingsPanel.qml` object mounted so a host toggle cannot destroy a dirty
+draft, but the FloatingWindow stays hidden and the backend does no work until
+the panel is summoned. Disabling or removing the plugin destroys the service,
+indicator PanelWindow, settings FloatingWindow, and audio bridge.
 Voxtype retains responsibility for speech capture, transcription, hotkeys, and
 output. QML remains presentation-only; optional LLM refinement executes as a
 Voxtype post-process child (`scripts/voxtype-refine`), not as a Quickshell

@@ -94,6 +94,62 @@ QtObject {
         return true
     }
 
+    function finiteNumber(value, fallback) {
+        const number = Number(value)
+        return isFinite(number) ? number : fallback
+    }
+
+    function buildPatch(draft) {
+        if (!draft || typeof draft !== "object") return ({})
+        const savedRefine = settings && settings.refine ? settings.refine : ({})
+        const savedIndicator = settings && settings.indicator ? settings.indicator : ({})
+        const nextRefine = draft.refine || ({})
+        const nextIndicator = draft.indicator || ({})
+        const savedOverride = savedRefine.modelOverride
+            ? String(savedRefine.model || "") : ""
+        const refine = ({})
+        const indicator = ({})
+
+        if (Boolean(nextRefine.enabled) !== Boolean(savedRefine.enabled))
+            refine.enabled = Boolean(nextRefine.enabled)
+        if (String(nextRefine.provider || "") !== String(savedRefine.provider || ""))
+            refine.provider = String(nextRefine.provider || "")
+        if (String(nextRefine.model || "") !== savedOverride)
+            refine.model = String(nextRefine.model || "")
+        if (String(nextRefine.prompt || "") !== String(savedRefine.prompt || ""))
+            refine.prompt = String(nextRefine.prompt || "")
+        if (String(nextRefine.dictionary || "") !== String(savedRefine.dictionary || ""))
+            refine.dictionary = String(nextRefine.dictionary || "")
+
+        if (String(nextIndicator.preset || "signal")
+                !== String(savedIndicator.preset || "signal"))
+            indicator.preset = String(nextIndicator.preset || "signal")
+        if (String(nextIndicator.position || "bottom-center")
+                !== String(savedIndicator.position || "bottom-center"))
+            indicator.position = String(nextIndicator.position || "bottom-center")
+        if (Math.abs(finiteNumber(nextIndicator.scale, 1.0)
+                - finiteNumber(savedIndicator.scale, 1.0)) > 0.0001)
+            indicator.scale = finiteNumber(nextIndicator.scale, 1.0)
+        if (Boolean(nextIndicator.motion) !== (savedIndicator.motion === undefined
+                ? true : Boolean(savedIndicator.motion)))
+            indicator.motion = Boolean(nextIndicator.motion)
+        if (Math.abs(finiteNumber(nextIndicator.glow, 0.6)
+                - finiteNumber(savedIndicator.glow, 0.6)) > 0.0001)
+            indicator.glow = finiteNumber(nextIndicator.glow, 0.6)
+
+        const patch = ({})
+        if (Object.keys(refine).length > 0) patch.refine = refine
+        if (Object.keys(indicator).length > 0) patch.indicator = indicator
+        return patch
+    }
+
+    function rebaseConflictDraft(draft) {
+        if (!hasRevisionConflict) return null
+        const patch = buildPatch(draft)
+        if (!adoptRevisionConflictSnapshot()) return null
+        return patch
+    }
+
     function setLocalError(operation, message) {
         clearFeedback()
         errorCode = "invalid-input"

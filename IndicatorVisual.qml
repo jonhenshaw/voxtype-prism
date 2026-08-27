@@ -351,6 +351,31 @@ Item {
             height: 34
             anchors.centerIn: parent
 
+            component BarBank: Row {
+                property bool reversed: false
+                layoutDirection: reversed ? Qt.RightToLeft : Qt.LeftToRight
+                spacing: 3
+
+                Repeater {
+                    model: 5
+
+                    Rectangle {
+                        required property int index
+                        width: 3
+                        height: root.meterHeight(index)
+                        anchors.verticalCenter: parent.verticalCenter
+                        radius: 1.5
+                        color: root.stateColor
+                        opacity: root.phase === "ready" ? 0.5 : 0.92
+
+                        Behavior on height {
+                            enabled: root.motionEnabled
+                            NumberAnimation { duration: 76; easing.type: Easing.OutCubic }
+                        }
+                    }
+                }
+            }
+
             Rectangle {
                 id: stripGlowSource
                 visible: false
@@ -425,59 +450,19 @@ Item {
                     }
                 }
 
-                Row {
+                BarBank {
                     anchors.right: stripCenter.left
                     anchors.rightMargin: 5
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.verticalCenterOffset: -1
-                    layoutDirection: Qt.RightToLeft
-                    spacing: 3
-
-                    Repeater {
-                        model: 5
-
-                        Rectangle {
-                            required property int index
-                            width: 3
-                            height: root.meterHeight(index)
-                            anchors.verticalCenter: parent.verticalCenter
-                            radius: 1.5
-                            color: root.stateColor
-                            opacity: root.phase === "ready" ? 0.5 : 0.92
-
-                            Behavior on height {
-                                enabled: root.motionEnabled
-                                NumberAnimation { duration: 76; easing.type: Easing.OutCubic }
-                            }
-                        }
-                    }
+                    reversed: true
                 }
 
-                Row {
+                BarBank {
                     anchors.left: stripCenter.right
                     anchors.leftMargin: 5
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.verticalCenterOffset: -1
-                    spacing: 3
-
-                    Repeater {
-                        model: 5
-
-                        Rectangle {
-                            required property int index
-                            width: 3
-                            height: root.meterHeight(index)
-                            anchors.verticalCenter: parent.verticalCenter
-                            radius: 1.5
-                            color: root.stateColor
-                            opacity: root.phase === "ready" ? 0.5 : 0.92
-
-                            Behavior on height {
-                                enabled: root.motionEnabled
-                                NumberAnimation { duration: 76; easing.type: Easing.OutCubic }
-                            }
-                        }
-                    }
                 }
             }
         }

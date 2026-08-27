@@ -24,6 +24,7 @@ Item {
     readonly property string pluginId: manifest && manifest.id
         ? String(manifest.id) : "io.github.jonhenshaw.voxtype-prism"
     property alias windowVisible: window.visible
+    readonly property bool opened: window.visible
 
     property int selectedTab: 0
     property bool closingFromHost: false
@@ -257,29 +258,23 @@ Item {
         if (shouldClearOverride) refineModel = ""
     }
 
-    function buildPatch() {
-        const patch = {}
-        const refine = {}
-        const indicator = {}
-
-        if (refineEnabled !== Boolean(savedRefine.enabled)) refine.enabled = refineEnabled
-        if (refineProvider !== String(savedRefine.provider || "")) refine.provider = refineProvider
-        if (refineModel !== savedModelOverride) refine.model = refineModel
-        if (refinePrompt !== String(savedRefine.prompt || "")) refine.prompt = refinePrompt
-        if (refineDictionary !== String(savedRefine.dictionary || "")) refine.dictionary = refineDictionary
-
-        if (indicatorPreset !== String(savedIndicator.preset || "signal")) indicator.preset = indicatorPreset
-        if (indicatorPosition !== String(savedIndicator.position || "bottom-center")) indicator.position = indicatorPosition
-        if (Math.abs(indicatorScale - finiteNumber(savedIndicator.scale, 1.0)) > 0.0001)
-            indicator.scale = indicatorScale
-        if (indicatorMotion !== (savedIndicator.motion === undefined ? true : Boolean(savedIndicator.motion)))
-            indicator.motion = indicatorMotion
-        if (Math.abs(indicatorGlow - finiteNumber(savedIndicator.glow, 0.6)) > 0.0001)
-            indicator.glow = indicatorGlow
-
-        if (Object.keys(refine).length > 0) patch.refine = refine
-        if (Object.keys(indicator).length > 0) patch.indicator = indicator
-        return patch
+    function draftObject() {
+        return {
+            refine: {
+                enabled: refineEnabled,
+                provider: refineProvider,
+                model: refineModel,
+                prompt: refinePrompt,
+                dictionary: refineDictionary
+            },
+            indicator: {
+                preset: indicatorPreset,
+                position: indicatorPosition,
+                scale: indicatorScale,
+                motion: indicatorMotion,
+                glow: indicatorGlow
+            }
+        }
     }
 
     function saveChanges() {
@@ -288,7 +283,7 @@ Item {
             backend.setLocalError("Save", validationMessage)
             return
         }
-        backend.save(buildPatch())
+        backend.save(backend.buildPatch(draftObject()))
     }
 
     function runTest() {
@@ -329,8 +324,8 @@ Item {
     }
 
     function keepDraftAfterConflict() {
-        const draftPatch = buildPatch()
-        if (!backend.adoptRevisionConflictSnapshot()) return
+        const draftPatch = backend.rebaseConflictDraft(draftObject())
+        if (!draftPatch) return
         syncDraft()
         applyDraftPatch(draftPatch)
         backend.successMessage = "Draft kept on top of external changes"
@@ -407,6 +402,15 @@ Item {
     }
 
     function close() {
+        // Host toggle/hide reaches this method before it updates its own open
+        // bookkeeping. Keep the loaded panel visible until the user resolves a
+        // dirty draft; finishClose() first resets/saves the draft and then asks
+        // the host to hide again.
+        if (window.visible && dirty) {
+            pendingCloseAction = "close"
+            showDiscardDialog()
+            return
+        }
         closingFromHost = true
         suppressVisibilityNotification = true
         window.visible = false

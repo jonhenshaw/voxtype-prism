@@ -50,11 +50,11 @@ Item {
                 configAvailable: voxtypeConfig.available,
                 stockOsdEnabled: voxtypeConfig.stockOsdEnabled,
                 daemonState: stateReader.daemonState,
-                phase: signal.phase,
-                surfaceWanted: signal.surfaceWanted,
-                presence: signal.presence,
+                phase: indicatorSurface.phase,
+                surfaceWanted: indicatorSurface.surfaceWanted,
+                presence: indicatorSurface.presence,
                 audioRunning: audioBridge.running,
-                sampleLevels: signal.sampleLevels,
+                sampleLevels: indicatorSurface.sampleLevels,
                 indicatorStyle: indicatorConfig.styleId,
                 indicatorPosition: indicatorConfig.position,
                 indicatorScale: indicatorConfig.scaleFactor,
@@ -76,7 +76,7 @@ Item {
     }
 
     SignalSurface {
-        id: signal
+        id: indicatorSurface
         daemonState: voxtypeConfig.configured ? stateReader.daemonState : "idle"
         audio: audioBridge
         themePalette: palette
