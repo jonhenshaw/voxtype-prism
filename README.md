@@ -12,7 +12,9 @@ An Omarchy-native enhancement layer for
 - Follows the focused Hyprland monitor.
 - Uses an empty input region and never steals keyboard focus.
 - Runs as an Omarchy `service` inside the existing `omarchy-shell` process.
-- No network access, credentials, analytics, or privileged commands.
+- The Quickshell service has no network access, credentials, analytics, or privileged commands.
+- Optional Voxtype post-process helper that refines transcripts through the
+  same OhMyPi logins (Grok, Anthropic, OpenAI Codex) or local Qwen.
 - Never loads watched config, runtime-state, or palette files into QML; a
   bounded, no-follow helper emits only normalized status tokens to
   `omarchy-shell`.
@@ -22,7 +24,7 @@ An Omarchy-native enhancement layer for
 - Omarchy Quattro with shell-plugin support.
 - Voxtype 0.7.5 or newer, running as `voxtype.service`.
 - `/usr/bin/voxtype-audio-bridge` from the Voxtype package.
-- Python 3 for the bundled bounded reader and reversible setup helper.
+- Python 3 for the bounded reader, setup helper, and optional refine helper.
 - `JetBrainsMono Nerd Font` for the state icons.
 
 ## Install
@@ -69,6 +71,50 @@ omarchy plugin remove io.github.jonhenshaw.voxtype-prism
 The helper restores only `[osd] enabled`; it never rolls back or overwrites the
 user's model, engine, hotkey, output, or other Voxtype settings.
 
+## LLM refine
+
+Signal stays presentation-only. Transcript cleanup is a Voxtype post-process
+command that runs `scripts/voxtype-refine` as a child of `voxtype.service`.
+It reads OhMyPi credentials from `~/.omp/agent/agent.db` and never loads
+tokens into `omarchy-shell`.
+
+```bash
+scripts/voxtype-refine list
+scripts/voxtype-refine status
+scripts/voxtype-refine set grok        # default
+scripts/voxtype-refine set anthropic
+scripts/voxtype-refine set openai
+scripts/voxtype-refine set local
+scripts/voxtype-refine prompt
+scripts/voxtype-refine edit-prompt
+scripts/voxtype-refine dictionary
+scripts/voxtype-refine edit-dictionary
+
+
+```
+
+| id | provider | default model | notes |
+| --- | --- | --- | --- |
+| `grok` | xAI SuperGrok (`xai-oauth`) | `grok-4.20-0309-non-reasoning` | default |
+| `anthropic` | Claude (`anthropic`) | `claude-haiku-4-5` | Haiku |
+| `openai` | ChatGPT Codex (`openai-codex`) | `gpt-5.3-codex-spark` | ChatGPT subscription |
+| `local` | llama.cpp on `:8000` | `Qwen3.8-27B-GGUF` | optional, slower |
+
+
+Active selection lives in `~/.config/voxtype/refine.toml`. Point Voxtype
+`[output.post_process].command` at the helper (or `~/.config/voxtype/llm-refine.py`).
+
+The system prompt is `~/.config/voxtype/refine-prompt.md`. Edit that file or run
+`scripts/voxtype-refine edit-prompt`.
+
+The dictionary is `~/.config/voxtype/refine-dictionary.md`. Terms are appended
+to the system prompt. Blank lines and `#` comments are ignored. Edit that file
+or run `scripts/voxtype-refine edit-dictionary`. Changes apply on the next
+dictation; no Voxtype restart.
+
+
+
+
 ## Security boundaries
 
 - `VoxtypeConfig.qml`, `StateReader.qml`, and `OmarchyPalette.qml` consume only
@@ -82,6 +128,8 @@ user's model, engine, hotkey, output, or other Voxtype settings.
 - Config updates compare the latest bounded snapshot immediately before atomic
   replacement and retry when VoxType or its TUI concurrently replaces the file,
   preserving unrelated settings.
+- `scripts/voxtype-refine` is the only network path. It is not loaded by QML.
+
 
 ## Development
 

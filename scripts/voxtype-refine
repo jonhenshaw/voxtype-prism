@@ -1,0 +1,588 @@
+#!/usr/bin/python3
+"""Refine Voxtype transcripts through OhMyPi-backed providers.
+
+Reads stdin, writes cleaned text to stdout. Voxtype falls back to the raw
+transcript on non-zero exit. Credentials stay in ~/.omp/agent/agent.db;
+this helper never prints them.
+
+  voxtype-refine                 # stdin → refined stdout
+  voxtype-refine list
+  voxtype-refine status
+  voxtype-refine set grok|anthropic|openai|local
+  voxtype-refine prompt          # print the assembled system prompt
+  voxtype-refine edit-prompt     # open the prompt in $EDITOR
+  voxtype-refine dictionary      # print the dictionary path and terms
+  voxtype-refine edit-dictionary # open the dictionary in $EDITOR
+
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+MAX_REFINE_CONFIG_BYTES = 8 * 1024
+MAX_PROMPT_BYTES = 32 * 1024
+MAX_DICTIONARY_BYTES = 32 * 1024
+THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+DEFAULT_SYSTEM = """You refine speech-to-text dictation.
+Fix spelling, grammar, and punctuation.
+Correct obvious ASR errors.
+Remove filler words (um, uh, like, you know).
+Keep the speaker's meaning, tone, and wording.
+Do not add information.
+Do not wrap the result in quotes or markdown.
+Output only the cleaned text."""
+DICTIONARY_HEADING = "Preferred spellings and proper nouns:"
+DEFAULT_DICTIONARY = """# Custom dictionary for Voxtype LLM refine.
+# One preferred spelling or proper noun per line.
+# Optional: spoken form → written form
+#   hypr land → Hyprland
+#
+# Blank lines and # comments are ignored.
+"""
+
+
+
+@dataclass(frozen=True)
+class Provider:
+    id: str
+    label: str
+    omp_provider: str | None
+    api: str
+    base_url: str
+    model: str
+    default: bool = False
+
+
+PROVIDERS: dict[str, Provider] = {
+    "grok": Provider(
+        id="grok",
+        label="Grok (xAI SuperGrok)",
+        omp_provider="xai-oauth",
+        api="openai-completions",
+        base_url="https://api.x.ai/v1",
+        model="grok-4.20-0309-non-reasoning",
+        default=True,
+    ),
+    "anthropic": Provider(
+        id="anthropic",
+        label="Anthropic (Claude Haiku)",
+        omp_provider="anthropic",
+        api="anthropic-messages",
+        base_url="https://api.anthropic.com",
+        model="claude-haiku-4-5",
+    ),
+    "openai": Provider(
+        id="openai",
+        label="OpenAI (ChatGPT Codex Spark)",
+        omp_provider="openai-codex",
+        api="openai-codex-responses",
+        base_url="https://chatgpt.com/backend-api/codex/responses",
+        model="gpt-5.3-codex-spark",
+    ),
+
+    "local": Provider(
+        id="local",
+        label="Local Qwen 3.8 27B",
+        omp_provider=None,
+        api="openai-completions",
+        base_url="http://127.0.0.1:8000/v1",
+        model="Qwen3.8-27B-GGUF",
+    ),
+}
+
+DEFAULT_PROVIDER = next(p.id for p in PROVIDERS.values() if p.default)
+
+
+def xdg_path(env_name: str, fallback: Path) -> Path:
+    value = os.environ.get(env_name, "")
+    return Path(value).expanduser() if value else fallback
+
+
+def refine_config_path() -> Path:
+    override = os.environ.get("VOXTYPE_REFINE_CONFIG", "")
+    if override:
+        return Path(override).expanduser()
+    return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "voxtype" / "refine.toml"
+
+
+def prompt_path() -> Path:
+    override = os.environ.get("VOXTYPE_REFINE_PROMPT", "")
+    if override:
+        return Path(override).expanduser()
+    return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "voxtype" / "refine-prompt.md"
+
+def ensure_prompt_file(path: Path) -> Path:
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(DEFAULT_SYSTEM if DEFAULT_SYSTEM.endswith("\n") else DEFAULT_SYSTEM + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+    return path
+
+
+def load_system_prompt(path: Path) -> str:
+    if not path.exists():
+        return DEFAULT_SYSTEM
+    text = path.read_text(encoding="utf-8")
+    if len(text.encode("utf-8")) > MAX_PROMPT_BYTES:
+        raise RuntimeError(f"refine prompt is unexpectedly large: {path}")
+    stripped = text.strip()
+    return stripped if stripped else DEFAULT_SYSTEM
+
+def dictionary_path() -> Path:
+    override = os.environ.get("VOXTYPE_REFINE_DICTIONARY", "")
+    if override:
+        return Path(override).expanduser()
+    return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "voxtype" / "refine-dictionary.md"
+
+
+def ensure_dictionary_file(path: Path) -> Path:
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    body = DEFAULT_DICTIONARY if DEFAULT_DICTIONARY.endswith("\n") else DEFAULT_DICTIONARY + "\n"
+    tmp.write_text(body, encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+    return path
+
+
+def load_dictionary(path: Path) -> str:
+    if not path.exists():
+        return ""
+    text = path.read_text(encoding="utf-8")
+    if len(text.encode("utf-8")) > MAX_DICTIONARY_BYTES:
+        raise RuntimeError(f"refine dictionary is unexpectedly large: {path}")
+    terms: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        terms.append(stripped)
+    return "\n".join(terms)
+
+
+def compose_system_prompt(prompt: str, dictionary: str) -> str:
+    prompt = prompt.strip()
+    dictionary = dictionary.strip()
+    if not dictionary:
+        return prompt
+    return f"{prompt}\n\n{DICTIONARY_HEADING}\n{dictionary}"
+
+
+
+def parse_refine_toml(text: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("["):
+            continue
+        key, separator, raw = stripped.partition("=")
+        if not separator:
+            continue
+        value = raw.split("#", 1)[0].strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[key.strip()] = value
+    return values
+
+
+def load_selection(path: Path) -> tuple[Provider, str]:
+    provider_id = DEFAULT_PROVIDER
+    model_override: str | None = None
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        if len(text.encode("utf-8")) > MAX_REFINE_CONFIG_BYTES:
+            raise RuntimeError(f"refine config is unexpectedly large: {path}")
+        parsed = parse_refine_toml(text)
+        if parsed.get("provider"):
+            provider_id = parsed["provider"].strip().lower()
+        if parsed.get("model"):
+            model_override = parsed["model"].strip()
+    env_provider = os.environ.get("VOXTYPE_REFINE_PROVIDER", "").strip().lower()
+    if env_provider:
+        provider_id = env_provider
+    if provider_id not in PROVIDERS:
+        raise RuntimeError(f"unknown refine provider {provider_id!r}")
+    provider = PROVIDERS[provider_id]
+    model = os.environ.get("VOXTYPE_REFINE_MODEL", "").strip() or model_override or provider.model
+    return provider, model
+
+
+def write_refine_config(path: Path, provider_id: str) -> None:
+    if provider_id not in PROVIDERS:
+        raise RuntimeError(f"unknown refine provider {provider_id!r}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = (
+        f"# Voxtype LLM refine provider. Switched by: voxtype-refine set <id>\n"
+        f"provider = \"{provider_id}\"\n"
+    )
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(body, encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+
+
+def strip_output(text: str) -> str:
+    text = THINK_RE.sub("", text).strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1].strip()
+    return text
+
+
+def openai_message_text(payload: dict[str, Any]) -> str:
+    choices = payload.get("choices") or []
+    if not choices:
+        return ""
+    message = choices[0].get("message") or {}
+    return strip_output(str(message.get("content") or ""))
+
+
+def anthropic_message_text(payload: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    for block in payload.get("content") or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            chunks.append(str(block.get("text") or ""))
+    return strip_output("".join(chunks))
+
+
+def collect_codex_sse(raw: bytes) -> str:
+    texts: list[str] = []
+    for event in raw.replace(b"\r\n", b"\n").split(b"\n\n"):
+        for line in event.split(b"\n"):
+            if not line.startswith(b"data:"):
+                continue
+            data = line[5:].strip()
+            if data in (b"", b"[DONE]"):
+                continue
+            try:
+                payload = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            if payload.get("type") == "response.output_text.delta":
+                texts.append(str(payload.get("delta") or ""))
+    return strip_output("".join(texts))
+
+
+def expiry_seconds(expires: Any) -> float | None:
+    if not isinstance(expires, (int, float)):
+        return None
+    value = float(expires)
+    if value > 10_000_000_000:
+        value /= 1000.0
+    return value
+
+
+def load_oauth(provider_id: str) -> dict[str, Any]:
+    path = Path(os.environ.get("VOXTYPE_OMP_AGENT_DB", str(Path.home() / ".omp" / "agent" / "agent.db")))
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        row = con.execute(
+            "select data from auth_credentials where provider = ? limit 1",
+            (provider_id,),
+        ).fetchone()
+    finally:
+        con.close()
+    if row is None:
+        raise RuntimeError(f"no OhMyPi login for {provider_id}; run omp /login {provider_id}")
+    data = json.loads(row[0])
+    if not isinstance(data, dict) or not data.get("access"):
+        raise RuntimeError(f"OhMyPi credential for {provider_id} is missing an access token")
+    return data
+
+
+def refresh_oauth(omp_provider: str, cred: dict[str, Any]) -> str:
+    access = str(cred.get("access") or "")
+    refresh = str(cred.get("refresh") or "")
+    expires = expiry_seconds(cred.get("expires"))
+    if expires is not None and expires - time.time() > 90:
+        return access
+    if not refresh:
+        return access
+
+    if omp_provider == "xai-oauth":
+        url = "https://auth.x.ai/oauth2/token"
+        body = urllib.parse.urlencode(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": "b1a00492-073a-47ea-816f-4c329264a828",
+            }
+        ).encode()
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    elif omp_provider == "anthropic":
+        url = "https://api.anthropic.com/v1/oauth/token"
+        body = json.dumps(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            }
+        ).encode()
+        headers = {"Content-Type": "application/json"}
+    elif omp_provider == "openai-codex":
+        url = "https://auth.openai.com/oauth/token"
+        body = urllib.parse.urlencode(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+            }
+        ).encode()
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    else:
+        return access
+
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            payload = json.load(resp)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return access
+    token = payload.get("access_token")
+    return str(token) if token else access
+
+
+def http_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.load(resp)
+
+
+def http_bytes(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> bytes:
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def complete(provider: Provider, model: str, user: str, system: str) -> str:
+    timeout = float(os.environ.get("VOXTYPE_LLM_TIMEOUT", "25"))
+    if provider.api == "openai-completions":
+        headers = {"Content-Type": "application/json"}
+        if provider.omp_provider:
+            token = refresh_oauth(provider.omp_provider, load_oauth(provider.omp_provider))
+            headers["Authorization"] = f"Bearer {token}"
+        payload: dict[str, Any] = {
+            "model": model,
+            "temperature": 0.1,
+            "max_tokens": 2048,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        if provider.id == "local":
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        data = http_json(f"{provider.base_url.rstrip('/')}/chat/completions", headers, payload, timeout)
+        return openai_message_text(data)
+
+    if provider.api == "anthropic-messages":
+        token = refresh_oauth("anthropic", load_oauth("anthropic"))
+        data = http_json(
+            f"{provider.base_url.rstrip('/')}/v1/messages",
+            {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+            },
+            {
+                "model": model,
+                "max_tokens": 2048,
+                "system": system,
+                "messages": [{"role": "user", "content": user}],
+            },
+            timeout,
+        )
+        return anthropic_message_text(data)
+
+    if provider.api == "openai-codex-responses":
+        cred = load_oauth("openai-codex")
+        token = refresh_oauth("openai-codex", cred)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        account = cred.get("accountId")
+        if account:
+            headers["ChatGPT-Account-Id"] = str(account)
+        raw = http_bytes(
+            provider.base_url,
+            headers,
+            {
+                "model": model,
+                "instructions": system,
+                "input": [{"role": "user", "content": [{"type": "input_text", "text": user}]}],
+                "store": False,
+                "stream": True,
+            },
+            timeout,
+        )
+        return collect_codex_sse(raw)
+
+    raise RuntimeError(f"unsupported refine api {provider.api}")
+
+
+
+def refine_text(raw: str) -> str:
+    if not raw.strip():
+        return raw
+    user = raw
+    context = os.environ.get("VOXTYPE_CONTEXT", "").strip()
+    if context:
+        user = (
+            "Previous dictation for context (do NOT include in output):\n"
+            f"{context}\n\n"
+            "Current text to clean up:\n"
+            f"{raw}"
+        )
+    provider, model = load_selection(refine_config_path())
+    cleaned = complete(
+        provider,
+        model,
+        user,
+        compose_system_prompt(load_system_prompt(prompt_path()), load_dictionary(dictionary_path())),
+    )
+
+    if not cleaned:
+        raise RuntimeError("refine provider returned empty text")
+    if raw.endswith("\n") and not cleaned.endswith("\n"):
+        cleaned += "\n"
+    return cleaned
+
+
+
+def cmd_list() -> int:
+    selected, _ = load_selection(refine_config_path())
+    for provider in PROVIDERS.values():
+        mark = "*" if provider.id == selected.id else " "
+        print(f"{mark} {provider.id:<10} {provider.label}  [{provider.model}]")
+    return 0
+
+
+def cmd_status() -> int:
+    provider, model = load_selection(refine_config_path())
+    print(f"provider={provider.id}")
+    print(f"model={model}")
+    print(f"label={provider.label}")
+    print(f"config={refine_config_path()}")
+    print(f"prompt={prompt_path()}")
+    print(f"dictionary={dictionary_path()}")
+
+    return 0
+
+
+def cmd_set(provider_id: str) -> int:
+    write_refine_config(refine_config_path(), provider_id)
+    provider, model = load_selection(refine_config_path())
+    print(f"refine provider set to {provider.id} ({model})")
+    return 0
+
+
+def cmd_prompt() -> int:
+    path = ensure_prompt_file(prompt_path())
+    system = compose_system_prompt(load_system_prompt(path), load_dictionary(dictionary_path()))
+    print(f"prompt={path}")
+    print(f"dictionary={dictionary_path()}")
+    print("---")
+    print(system, end="" if system.endswith("\n") else "\n")
+    return 0
+
+
+def cmd_edit_prompt() -> int:
+    path = ensure_prompt_file(prompt_path())
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "nvim"
+    return subprocess.call([editor, str(path)])
+
+
+def cmd_dictionary() -> int:
+    path = dictionary_path()
+    text = load_dictionary(path)
+    print(f"dictionary={path}")
+    print("---")
+    if not text:
+        print("(empty)")
+        return 0
+    print(text, end="" if text.endswith("\n") else "\n")
+    return 0
+
+
+def cmd_edit_dictionary() -> int:
+    path = ensure_dictionary_file(dictionary_path())
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "nvim"
+    return subprocess.call([editor, str(path)])
+
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description=__doc__)
+    sub = result.add_subparsers(dest="action")
+    sub.add_parser("list", help="list refine providers")
+    sub.add_parser("status", help="show the active refine provider")
+    set_cmd = sub.add_parser("set", help="switch the refine provider")
+    set_cmd.add_argument("provider", choices=sorted(PROVIDERS))
+    sub.add_parser("prompt", help="print the assembled system prompt")
+    sub.add_parser("edit-prompt", help="open the system prompt in $EDITOR")
+    sub.add_parser("dictionary", help="print the dictionary path and terms")
+    sub.add_parser("edit-dictionary", help="open the dictionary in $EDITOR")
+
+    return result
+
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv:
+        args = parser().parse_args(argv)
+        if args.action == "list":
+            return cmd_list()
+        if args.action == "status":
+            return cmd_status()
+        if args.action == "set":
+            return cmd_set(args.provider)
+        if args.action == "prompt":
+            return cmd_prompt()
+        if args.action == "edit-prompt":
+            return cmd_edit_prompt()
+        if args.action == "dictionary":
+            return cmd_dictionary()
+        if args.action == "edit-dictionary":
+            return cmd_edit_dictionary()
+
+        return 2
+    try:
+        sys.stdout.write(refine_text(sys.stdin.read()))
+        return 0
+    except (OSError, RuntimeError, urllib.error.URLError, TimeoutError, json.JSONDecodeError, sqlite3.Error):
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

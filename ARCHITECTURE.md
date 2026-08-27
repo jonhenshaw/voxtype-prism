@@ -22,6 +22,15 @@ scripts/voxtype-prism-read
   ├─ opens config/runtime/palette sources with O_NOFOLLOW
   ├─ accepts only regular files below mode-specific byte ceilings
   └─ emits small normalized status tokens, never source content
+
+scripts/voxtype-refine
+  ├─ Voxtype post-process child (stdin → stdout)
+  ├─ reads ~/.config/voxtype/refine.toml for grok|anthropic|openai|local
+  ├─ reads ~/.config/voxtype/refine-prompt.md
+  ├─ appends ~/.config/voxtype/refine-dictionary.md to the system prompt
+  └─ uses OhMyPi ~/.omp/agent/agent.db; never enters QML
+
+
 ```
 
 ## Why the built-in Voxtype OSD is disabled
@@ -41,7 +50,8 @@ oversized, Prism renders nothing and does not start its audio-bridge child.
 Omarchy loads `Service.qml` once when the plugin is enabled. Disabling or
 removing the plugin destroys the service, its PanelWindow, and the audio bridge.
 Voxtype retains responsibility for speech capture, transcription, hotkeys, and
-output. Prism is presentation-only in this release.
+output. Prism is presentation-only in this release. Optional LLM refine is a
+Voxtype post-process hook (`scripts/voxtype-refine`), not a Quickshell child.
 
 The helper under `scripts/` is user-invoked. It keeps a small state record under
 `$XDG_STATE_HOME/voxtype-prism/` and uses an atomic replacement to change
