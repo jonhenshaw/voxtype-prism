@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 
 QtObject {
     id: root
@@ -13,18 +12,13 @@ QtObject {
         return "/run/user/1000/voxtype/state";
     }
 
-    property string daemonState: "idle"
+    readonly property string daemonState: stateStatus.value
 
-    property FileView stateFile: FileView {
+    property BoundedValueReader stateStatus: BoundedValueReader {
+        id: stateStatus
+        mode: "state"
         path: root.statePath
-        watchChanges: true
-        printErrors: false
-
-        onLoaded: {
-            const next = (text() || "idle").trim();
-            root.daemonState = next.length > 0 ? next : "idle";
-        }
-        onLoadFailed: root.daemonState = "idle"
-        onFileChanged: reload()
+        intervalMs: 80
+        fallbackValue: "idle"
     }
 }

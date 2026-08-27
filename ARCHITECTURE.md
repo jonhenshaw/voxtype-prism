@@ -9,6 +9,7 @@ omarchy-shell
   └─ io.github.jonhenshaw.voxtype-prism / Service.qml
       ├─ VoxtypeConfig.qml   gates rendering until stock OSD is disabled
       ├─ StateReader.qml     watches idle/recording/transcribing state
+      ├─ BoundedValueReader.qml consumes normalized helper status tokens
       ├─ AudioBridge.qml     reads live peak/RMS frames
       ├─ OmarchyPalette.qml  follows the current theme
       └─ SignalSurface.qml   owns the click-through PanelWindow
@@ -16,6 +17,11 @@ omarchy-shell
 voxtype.service
   ├─ writes $XDG_RUNTIME_DIR/voxtype/state
   └─ serves $XDG_RUNTIME_DIR/voxtype/audio.sock
+
+scripts/voxtype-prism-read
+  ├─ opens config/runtime/palette sources with O_NOFOLLOW
+  ├─ accepts only regular files below mode-specific byte ceilings
+  └─ emits small normalized status tokens, never source content
 ```
 
 ## Why the built-in Voxtype OSD is disabled
@@ -25,9 +31,10 @@ built-in OSD child is enabled. Only spawning that child is gated by
 `[osd] enabled`. Prism therefore sets the built-in OSD to disabled through an
 explicit, reversible helper while retaining the same live audio feed.
 
-The plugin itself never writes Voxtype configuration. `VoxtypeConfig.qml` reads
-the file and fails closed: when the stock OSD is enabled or the config is
-missing, Prism renders nothing and does not start its audio-bridge child.
+The plugin itself never writes Voxtype configuration. `VoxtypeConfig.qml`
+receives only a normalized status token from the bounded reader and fails
+closed: when the stock OSD is enabled or the config is missing, unsafe, or
+oversized, Prism renders nothing and does not start its audio-bridge child.
 
 ## Lifecycle
 
@@ -41,6 +48,14 @@ The helper under `scripts/` is user-invoked. It keeps a small state record under
 only the scoped `[osd] enabled` key. Restore uses the recorded original value,
 not a whole-file rollback, so later user changes survive.
 
+Setup-state reads require a descriptor-validated regular file, reject symlinks
+and oversized content, and validate a strictly typed, config-bound schema only
+after the byte ceiling is enforced. Writes create a mode-0600 temporary file
+through a directory descriptor, flush it, and atomically replace the destination
+without following a planted link. Scoped VoxType config updates compare the
+latest snapshot immediately before replacement and retry a concurrent atomic
+change instead of overwriting unrelated settings.
+
 The helper also recognizes the pre-release `voxtype-signal-osd` state path so
 existing local setup state can be migrated without losing the original OSD
 setting.
@@ -48,6 +63,10 @@ setting.
 ## Failure boundaries
 
 - Missing Voxtype config: plugin remains dormant.
+- Unsafe or oversized config: plugin remains dormant without collecting its
+  content into `omarchy-shell`.
+- Unsafe, oversized, or invalid runtime state: state normalizes to `idle`.
+- Unsafe or oversized palette: the last safe/default palette remains active.
 - Built-in OSD still enabled: plugin remains dormant, avoiding duplicates.
 - Missing audio bridge or socket: the child retries without blocking the shell.
 - QML load failure: Omarchy rejects or unloads the service through its plugin

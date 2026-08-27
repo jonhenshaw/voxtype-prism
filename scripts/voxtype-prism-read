@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""Emit bounded, normalized Voxtype status without exposing file content to QML."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import stat
+import sys
+import time
+from pathlib import Path
+
+MAX_CONFIG_BYTES = 512 * 1024
+MAX_PALETTE_BYTES = 64 * 1024
+MAX_RUNTIME_STATE_BYTES = 256
+MIN_INTERVAL_MS = 50
+MAX_INTERVAL_MS = 10_000
+RUNTIME_STATES = frozenset({"idle", "recording", "streaming", "transcribing"})
+PALETTE_KEYS = frozenset(
+    {
+        "accent",
+        "background",
+        "blue",
+        "bright_foreground",
+        "color0",
+        "color1",
+        "color2",
+        "color3",
+        "color4",
+        "color7",
+        "color8",
+        "dark_background",
+        "dark_foreground",
+        "darker_background",
+        "foreground",
+        "green",
+        "muted",
+        "red",
+        "yellow",
+    }
+)
+
+
+class BoundedReadError(RuntimeError):
+    """The source could not be consumed within the safe file boundary."""
+
+
+def read_bounded_regular(path: Path, max_bytes: int) -> bytes:
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise BoundedReadError("O_NOFOLLOW is required")
+
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | nofollow
+    descriptor = os.open(path, flags)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise BoundedReadError("source is not a regular file")
+        if metadata.st_size > max_bytes:
+            raise BoundedReadError("source exceeds the byte limit")
+
+        chunks: list[bytes] = []
+        collected = 0
+        while collected <= max_bytes:
+            chunk = os.read(descriptor, min(64 * 1024, max_bytes + 1 - collected))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            collected += len(chunk)
+        if collected > max_bytes:
+            raise BoundedReadError("source grew beyond the byte limit")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def parse_osd_enabled(raw: str) -> bool:
+    in_osd = False
+    for line in raw.splitlines():
+        section = re.match(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$", line)
+        if section:
+            in_osd = section.group(1).strip() == "osd"
+            continue
+        if not in_osd or re.match(r"^\s*#", line):
+            continue
+        enabled = re.match(r"^\s*enabled\s*=\s*(true|false)\s*(?:#.*)?$", line)
+        if enabled:
+            return enabled.group(1) == "true"
+    return True
+
+
+def config_status(path: Path) -> str:
+    try:
+        raw = read_bounded_regular(path, MAX_CONFIG_BYTES).decode("utf-8")
+    except (OSError, UnicodeError, BoundedReadError):
+        return "unavailable"
+    return "stock-enabled" if parse_osd_enabled(raw) else "stock-disabled"
+
+
+def runtime_status(path: Path) -> str:
+    try:
+        value = read_bounded_regular(path, MAX_RUNTIME_STATE_BYTES).decode("utf-8").strip()
+    except (OSError, UnicodeError, BoundedReadError):
+        return "idle"
+    return value if value in RUNTIME_STATES else "idle"
+
+
+def palette_status(path: Path) -> str:
+    try:
+        raw = read_bounded_regular(path, MAX_PALETTE_BYTES).decode("utf-8")
+    except (OSError, UnicodeError, BoundedReadError):
+        return "{}"
+
+    values: dict[str, str] = {}
+    for line in raw.splitlines():
+        match = re.match(
+            r"^\s*([A-Za-z0-9_-]+)\s*=\s*[\"']?(#[0-9A-Fa-f]{6})",
+            line,
+        )
+        if match and match.group(1) in PALETTE_KEYS:
+            values[match.group(1)] = match.group(2)
+    return json.dumps(values, separators=(",", ":"), sort_keys=True)
+
+
+def watch(mode: str, path: Path, interval_ms: int) -> int:
+    reader = {
+        "config": config_status,
+        "palette": palette_status,
+        "state": runtime_status,
+    }[mode]
+    previous: str | None = None
+    while True:
+        value = reader(path)
+        if value != previous:
+            try:
+                print(value, flush=True)
+            except BrokenPipeError:
+                return 0
+            previous = value
+        time.sleep(interval_ms / 1000)
+
+
+def main() -> int:
+    if len(sys.argv) != 4 or sys.argv[1] not in {"config", "palette", "state"}:
+        return 2
+    try:
+        interval_ms = int(sys.argv[3])
+    except ValueError:
+        return 2
+    if not MIN_INTERVAL_MS <= interval_ms <= MAX_INTERVAL_MS:
+        return 2
+    try:
+        return watch(sys.argv[1], Path(sys.argv[2]), interval_ms)
+    except KeyboardInterrupt:
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
