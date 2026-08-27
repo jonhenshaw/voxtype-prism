@@ -1,20 +1,25 @@
 # Voxtype Prism
 
-An Omarchy-native enhancement layer for
-[Voxtype](https://github.com/peteonrails/voxtype). The first release ships
-**Signal**, a compact, theme-aware recording indicator.
+An Omarchy-native refinement and presentation studio for
+[Voxtype](https://github.com/peteonrails/voxtype). Prism adds a graphical
+**Refinement Workbench** plus three curated, theme-aware recording indicators.
 
 ![Voxtype Prism Signal recording indicator](preview.png)
 
-- Compact 156 × 40 px pill with a tightly diffused micro-halo.
-- Real microphone levels from Voxtype's audio bridge.
+- Native settings window for refinement, prompts, dictionary terms, and
+  indicator appearance.
+- Provider-aware transcript cleanup through Grok, Anthropic, OpenAI Codex, or
+  a loopback local model.
+- Explicit raw-versus-refined test bench; network calls happen only when the
+  user clicks **Test refinement** or when Voxtype invokes the enabled hook.
+- Signal, Halo, and Bar Pulse indicators driven by real microphone levels.
 - Distinct listening, streaming, working, and ready states.
 - Follows the focused Hyprland monitor.
 - Uses an empty input region and never steals keyboard focus.
-- Runs as an Omarchy `service` inside the existing `omarchy-shell` process.
-- The Quickshell service has no network access, credentials, analytics, or privileged commands.
-- Optional Voxtype post-process helper that refines transcripts through the
-  same OhMyPi logins (Grok, Anthropic, OpenAI Codex) or local Qwen.
+- Runs as Omarchy `service` and on-demand `panel` kinds inside the existing
+  `omarchy-shell` process.
+- Replaces the Quick Shell **Voxtype Configuration** launcher at user scope,
+  with an automatic fallback to Voxtype's packaged TUI.
 - Never loads watched config, runtime-state, or palette files into QML; a
   bounded, no-follow helper emits only normalized status tokens to
   `omarchy-shell`.
@@ -51,6 +56,12 @@ The activation action:
 Signal stays dormant while the activation card is visible, so Prism never
 duplicates the built-in Voxtype indicator.
 
+The always-loaded service also installs a guarded user-level override for
+`voxtype-configure.desktop`. Searching Quick Shell for **Voxtype
+Configuration** then opens the Refinement Workbench. If Prism is unavailable,
+the same entry falls back to `/usr/bin/voxtype-configure-launcher`; package
+files under `/usr/share` are never modified.
+
 If the activation card cannot be used, the same audited action remains
 available as a fallback:
 
@@ -64,12 +75,41 @@ Check setup state at any time:
 ~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-config status
 ```
 
-## Remove
+## Refinement Workbench
 
-Restore the exact OSD-enabled state recorded during activation, then remove
-Prism:
+Open **Voxtype Configuration** from Quick Shell, or summon the panel directly:
 
 ```bash
+omarchy-shell shell summon io.github.jonhenshaw.voxtype-prism '{}'
+```
+
+The workbench deliberately owns only Prism's enhancement layer:
+
+- **Refinement** — enable the Voxtype post-process hook, choose a provider,
+  inspect readiness, and compare raw text with an explicitly requested test.
+- **Prompt** — edit the system instructions with a 32 KiB limit.
+- **Dictionary** — keep preferred spellings and spoken-to-written mappings.
+- **Indicator** — preview and select Signal, Halo, or Bar Pulse; choose top or
+  bottom placement, scale, motion, and glow.
+
+**Advanced Voxtype settings** closes Prism before opening Voxtype's packaged
+TUI for engines, models, languages, hotkeys, audio, and output settings. Prism
+does not duplicate that upstream surface.
+
+Settings saves use an opaque revision. A concurrent TUI or file edit is
+reported as a conflict instead of being overwritten. Prompt, dictionary,
+provider, and indicator changes apply immediately; changing hook ownership
+also restarts and verifies `voxtype.service`.
+
+## Remove
+
+First open the workbench, turn **Refinement** off, and save. This restores a
+recorded pre-Prism post-process command when one existed, or removes Prism's
+hook when it did not. Then restore the launcher and exact OSD-enabled state
+recorded during activation before removing Prism:
+
+```bash
+~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-launcher remove
 ~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-config restore
 omarchy plugin remove io.github.jonhenshaw.voxtype-prism --yes
 ```
@@ -77,7 +117,7 @@ omarchy plugin remove io.github.jonhenshaw.voxtype-prism --yes
 The helper restores only `[osd] enabled`; it never rolls back or overwrites the
 user's model, engine, hotkey, output, or other Voxtype settings.
 
-## LLM refine
+## LLM refine CLI
 
 Signal stays presentation-only. Transcript cleanup is a Voxtype post-process
 command that runs `scripts/voxtype-refine` as a child of `voxtype.service`.
@@ -107,8 +147,10 @@ scripts/voxtype-refine edit-dictionary
 | `local` | llama.cpp on `:8000` | `Qwen3.8-27B-GGUF` | optional, slower |
 
 
-Active selection lives in `~/.config/voxtype/refine.toml`. Point Voxtype
-`[output.post_process].command` at the helper (or `~/.config/voxtype/llm-refine.py`).
+Active selection lives in `~/.config/voxtype/refine.toml`. The workbench owns
+the narrow `[output.post_process].command` integration. It recognizes the
+earlier `~/.config/voxtype/llm-refine.py` Prism trampoline for migration, but
+never overwrites an unknown post-process command.
 
 The system prompt is `~/.config/voxtype/refine-prompt.md`. Edit that file or run
 `scripts/voxtype-refine edit-prompt`.
@@ -121,20 +163,36 @@ dictation; no Voxtype restart.
 
 
 
-## Security boundaries
+Indicator preferences live in
+`~/.config/voxtype-prism/indicator.json`. The runtime reader accepts only the
+versioned preset, position, scale, motion, and glow schema and emits normalized
+values to QML.
+
+## Security and privacy boundaries
 
 - `VoxtypeConfig.qml`, `StateReader.qml`, and `OmarchyPalette.qml` consume only
   small normalized values from `scripts/voxtype-prism-read`. The helper opens sources with
   `O_NOFOLLOW`, requires regular files, enforces byte ceilings before emitting
   anything, and normalizes unexpected input to a fail-closed state.
-- Setup state is read through a descriptor-validated, size-limited regular-file
+- Setup and settings state is read through descriptor-validated, size-limited regular-file
   boundary, strictly typed, and bound to the requested VoxType config path.
-  Writes use a private temporary file, `fsync`, and an atomic directory-relative
-  replacement, so a planted symlink is replaced rather than followed.
+  Writes use randomized exclusive private temporary files, `fsync`, atomic
+  replacement, optimistic revisions, and a private write-ahead journal that
+  recovers interrupted multi-file saves without overwriting outside changes.
 - Config updates compare the latest bounded snapshot immediately before atomic
   replacement and retry when VoxType or its TUI concurrently replaces the file,
   preserving unrelated settings.
-- `scripts/voxtype-refine` is the only network path. It is not loaded by QML.
+- Credentials remain in `~/.omp/agent/agent.db`. The database must be a stable,
+  bounded, non-symlink regular file, and only one bounded provider row is read.
+  QML receives only readiness labels; tokens, account IDs, and authorization
+  headers never cross the helper interface.
+- `scripts/voxtype-refine` is the only network path. Remote providers receive
+  the current transcript and, when Voxtype supplies it, recent dictation
+  context. Provider responses and requests are bounded. Saving ordinary
+  settings never performs a network test.
+- The Quick Shell desktop override is installed only when the target is absent
+  or already carries Prism's ownership marker. Concurrent or foreign entries
+  are preserved, and the packaged Voxtype launcher remains the fallback.
 
 
 ## Development
@@ -142,6 +200,7 @@ dictation; no Voxtype restart.
 ```bash
 python3 -m unittest discover -s tests -v
 omarchy plugin validate .
+tests/qml-lint.sh
 git diff --check
 ```
 

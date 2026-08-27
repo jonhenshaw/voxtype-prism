@@ -19,23 +19,31 @@ this helper never prints them.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import re
+import secrets
 import sqlite3
+import stat
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 MAX_REFINE_CONFIG_BYTES = 8 * 1024
 MAX_PROMPT_BYTES = 32 * 1024
 MAX_DICTIONARY_BYTES = 32 * 1024
+MAX_TRANSCRIPT_BYTES = 64 * 1024
+MAX_NETWORK_RESPONSE_BYTES = 2 * 1024 * 1024
+NETWORK_READ_CHUNK_BYTES = 64 * 1024
+MAX_CREDENTIAL_DB_BYTES = 64 * 1024 * 1024
+MAX_CREDENTIAL_JSON_BYTES = 1024 * 1024
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 DEFAULT_SYSTEM = """You refine speech-to-text dictation.
 Fix spelling, grammar, and punctuation.
@@ -112,6 +120,449 @@ def xdg_path(env_name: str, fallback: Path) -> Path:
     return Path(value).expanduser() if value else fallback
 
 
+def path_entry_exists(path: Path) -> bool:
+    """Return whether a directory entry exists without following its target."""
+    try:
+        os.lstat(path)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def read_bounded_text(
+    path: Path,
+    limit: int,
+    label: str,
+    *,
+    missing_ok: bool = False,
+) -> str | None:
+    """Read one UTF-8 regular file without following the final path component."""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise RuntimeError(f"O_NOFOLLOW is required for {label} access")
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | nofollow)
+    except FileNotFoundError:
+        if missing_ok:
+            return None
+        raise RuntimeError(f"{label} not found: {path}") from None
+    except OSError as error:
+        raise RuntimeError(f"Refusing unsafe {label} path: {path}") from error
+
+    try:
+        return _read_bounded_descriptor(descriptor, limit, label, str(path))
+    finally:
+        os.close(descriptor)
+
+
+def _read_bounded_descriptor(descriptor: int, limit: int, label: str, display_path: str) -> str:
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISREG(metadata.st_mode):
+        raise RuntimeError(f"{label} is not a regular file: {display_path}")
+    if metadata.st_size > limit:
+        raise RuntimeError(f"{label} is unexpectedly large: {display_path}")
+
+    chunks: list[bytes] = []
+    collected = 0
+    while collected <= limit:
+        chunk = os.read(descriptor, min(64 * 1024, limit + 1 - collected))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        collected += len(chunk)
+    if collected > limit:
+        raise RuntimeError(f"{label} grew beyond the byte limit: {display_path}")
+    try:
+        return b"".join(chunks).decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RuntimeError(f"{label} is not valid UTF-8: {display_path}") from error
+
+
+def _read_bounded_text_at(directory: int, name: str, limit: int, label: str) -> str:
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise RuntimeError(f"O_NOFOLLOW is required for {label} access")
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | nofollow,
+            dir_fd=directory,
+        )
+    except OSError as error:
+        raise RuntimeError(f"Refusing unsafe {label} quarantine") from error
+    try:
+        return _read_bounded_descriptor(descriptor, limit, label, name)
+    finally:
+        os.close(descriptor)
+
+
+def _open_parent_directory(path: Path) -> int:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise RuntimeError("O_NOFOLLOW is required for settings writes")
+    try:
+        descriptor = os.open(
+            path.parent,
+            os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | nofollow,
+        )
+    except OSError as error:
+        raise RuntimeError(f"Refusing unsafe settings directory: {path.parent}") from error
+    if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise RuntimeError(f"Settings parent is not a directory: {path.parent}")
+    return descriptor
+
+
+def _write_all(descriptor: int, data: bytes) -> None:
+    offset = 0
+    while offset < len(data):
+        written = os.write(descriptor, data[offset:])
+        if written <= 0:
+            raise OSError("short write while saving refine settings")
+        offset += written
+
+
+RENAME_NOREPLACE = 1
+RENAME_EXCHANGE = 2
+
+
+@dataclass(frozen=True)
+class EntrySnapshot:
+    identity: tuple[int, int]
+    text: str | None
+
+
+def _rename_noreplace(directory: int, source: str, destination: str) -> None:
+    """Linux renameat2(RENAME_NOREPLACE), scoped to one open directory."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(libc, "renameat2", None)
+    if renameat2 is None:
+        raise RuntimeError("renameat2 is required for compare-and-swap settings writes")
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    result = renameat2(
+        directory,
+        os.fsencode(source),
+        directory,
+        os.fsencode(destination),
+        RENAME_NOREPLACE,
+    )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), destination)
+
+
+def _rename_exchange(directory: int, left: str, right: str) -> None:
+    """Atomically exchange two existing names inside one open directory."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(libc, "renameat2", None)
+    if renameat2 is None:
+        raise RuntimeError("renameat2 is required for compare-and-swap settings writes")
+    renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    renameat2.restype = ctypes.c_int
+    result = renameat2(
+        directory,
+        os.fsencode(left),
+        directory,
+        os.fsencode(right),
+        RENAME_EXCHANGE,
+    )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), right)
+
+
+def _publish_noreplace(directory: int, temporary_name: str, destination_name: str) -> None:
+    """Publish a regular temporary inode only while destination is absent."""
+    os.link(
+        temporary_name,
+        destination_name,
+        src_dir_fd=directory,
+        dst_dir_fd=directory,
+        follow_symlinks=False,
+    )
+
+
+def _restore_quarantine(directory: int, quarantine_name: str, destination_name: str) -> bool:
+    """Restore a displaced entry without overwriting a concurrent destination."""
+    try:
+        _rename_noreplace(directory, quarantine_name, destination_name)
+        return True
+    except FileExistsError:
+        return False
+
+
+def _entry_snapshot_at(directory: int, name: str, limit: int, label: str) -> EntrySnapshot:
+    """Capture identity and bounded text from the same opened directory entry."""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | nofollow,
+            dir_fd=directory,
+        )
+    except OSError:
+        metadata = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        return EntrySnapshot((metadata.st_dev, metadata.st_ino), None)
+    try:
+        metadata = os.fstat(descriptor)
+        identity = (metadata.st_dev, metadata.st_ino)
+        if not stat.S_ISREG(metadata.st_mode):
+            return EntrySnapshot(identity, None)
+        return EntrySnapshot(
+            identity,
+            _read_bounded_descriptor(descriptor, limit, label, name),
+        )
+    finally:
+        os.close(descriptor)
+
+
+def _preserve_entry(directory: int, source_name: str, destination_name: str) -> str:
+    """Move an ambiguous entry aside without overwriting any existing name."""
+    for _ in range(16):
+        quarantine_name = f".{destination_name}.cas.{secrets.token_hex(8)}"
+        try:
+            _rename_noreplace(directory, source_name, quarantine_name)
+            return quarantine_name
+        except FileExistsError:
+            continue
+        except FileNotFoundError:
+            return ""
+    # The source remains under its randomized temporary name. The caller must
+    # suppress normal temporary cleanup so ambiguous content is never deleted.
+    return source_name
+
+
+def _rollback_exchange_without_overwrite(
+    directory: int,
+    temporary_name: str,
+    destination_name: str,
+    candidate: EntrySnapshot,
+    limit: int,
+    label: str,
+) -> None:
+    """Remove our exchanged candidate while preserving every concurrent entry."""
+    expected_destination = candidate
+    try:
+        for _ in range(16):
+            actual_destination = _entry_snapshot_at(
+                directory, destination_name, limit, label
+            )
+            if actual_destination != expected_destination:
+                _preserve_entry(directory, temporary_name, destination_name)
+                return
+
+            moving = _entry_snapshot_at(directory, temporary_name, limit, label)
+            _rename_exchange(directory, temporary_name, destination_name)
+            displaced_after_exchange = _entry_snapshot_at(
+                directory, temporary_name, limit, label
+            )
+
+            if displaced_after_exchange == expected_destination:
+                if displaced_after_exchange == candidate:
+                    if (
+                        _entry_snapshot_at(directory, temporary_name, limit, label)
+                        == candidate
+                    ):
+                        os.unlink(temporary_name, dir_fd=directory)
+                    else:
+                        _preserve_entry(directory, temporary_name, destination_name)
+                else:
+                    _preserve_entry(directory, temporary_name, destination_name)
+                return
+
+            # A normal atomic writer replaced the destination between our
+            # validation and exchange. It is now safe at the temporary name;
+            # install it on the next exchange only while the entry we just
+            # installed remains unchanged.
+            expected_destination = moving
+
+        _preserve_entry(directory, temporary_name, destination_name)
+    except Exception:
+        try:
+            _preserve_entry(directory, temporary_name, destination_name)
+        except Exception:
+            pass
+        raise
+
+
+def atomic_write_text(
+    path: Path,
+    text: str,
+    limit: int,
+    label: str,
+    *,
+    expected: str | None | object = ...,
+) -> None:
+    """Atomically publish *text* through an exclusive private temporary file.
+
+    With existing expected text, the fsynced candidate and destination are
+    atomically exchanged, so readers always see a canonical entry. The
+    displaced entry is then validated and either committed or safely exchanged
+    back. ``None`` requires the destination to remain absent through no-overwrite
+    hard-link publication. The omitted sentinel retains legacy unconditional
+    replacement behavior.
+    """
+    data = text.encode("utf-8")
+    if len(data) > limit:
+        raise RuntimeError(f"{label} is unexpectedly large: {path}")
+
+    directory = _open_parent_directory(path)
+    temporary_name = ""
+    descriptor = -1
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW
+        for _ in range(16):
+            temporary_name = f".{path.name}.tmp.{secrets.token_hex(8)}"
+            try:
+                descriptor = os.open(temporary_name, flags, 0o600, dir_fd=directory)
+                break
+            except FileExistsError:
+                temporary_name = ""
+        if descriptor < 0:
+            raise RuntimeError(f"Could not allocate a safe temporary file in {path.parent}")
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise RuntimeError("Temporary refine settings path is not a regular file")
+
+        os.fchmod(descriptor, 0o600)
+        _write_all(descriptor, data)
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+
+        if expected is ...:
+            os.replace(
+                temporary_name,
+                path.name,
+                src_dir_fd=directory,
+                dst_dir_fd=directory,
+            )
+            temporary_name = ""
+        elif expected is None:
+            try:
+                _publish_noreplace(directory, temporary_name, path.name)
+            except FileExistsError as error:
+                raise RuntimeError(f"{label} changed concurrently: {path}") from error
+            os.unlink(temporary_name, dir_fd=directory)
+            temporary_name = ""
+        else:
+            candidate = _entry_snapshot_at(directory, temporary_name, limit, label)
+            try:
+                _rename_exchange(directory, temporary_name, path.name)
+            except FileNotFoundError as error:
+                raise RuntimeError(f"{label} changed concurrently: {path}") from error
+            except Exception:
+                _rollback_exchange_without_overwrite(
+                    directory,
+                    temporary_name,
+                    path.name,
+                    candidate,
+                    limit,
+                    label,
+                )
+                temporary_name = ""
+                os.fsync(directory)
+                raise
+            try:
+                displaced = _entry_snapshot_at(directory, temporary_name, limit, label)
+            except Exception:
+                _rollback_exchange_without_overwrite(
+                    directory,
+                    temporary_name,
+                    path.name,
+                    candidate,
+                    limit,
+                    label,
+                )
+                temporary_name = ""
+                os.fsync(directory)
+                raise
+            if displaced.text != expected:
+                _rollback_exchange_without_overwrite(
+                    directory,
+                    temporary_name,
+                    path.name,
+                    candidate,
+                    limit,
+                    label,
+                )
+                temporary_name = ""
+                os.fsync(directory)
+                raise RuntimeError(f"{label} changed concurrently: {path}")
+
+            # The randomized temporary name should be unreachable to normal
+            # writers. Revalidate before unlinking so even an injected swap is
+            # treated as an ambiguous conflict rather than deleted.
+            if _entry_snapshot_at(directory, temporary_name, limit, label) != displaced:
+                _rollback_exchange_without_overwrite(
+                    directory,
+                    temporary_name,
+                    path.name,
+                    candidate,
+                    limit,
+                    label,
+                )
+                temporary_name = ""
+                os.fsync(directory)
+                raise RuntimeError(f"{label} changed concurrently: {path}")
+            os.unlink(temporary_name, dir_fd=directory)
+            temporary_name = ""
+        os.fsync(directory)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary_name:
+            try:
+                os.unlink(temporary_name, dir_fd=directory)
+            except FileNotFoundError:
+                pass
+        os.close(directory)
+
+
+def atomic_remove_text(path: Path, expected: str, limit: int, label: str) -> None:
+    """Remove one exact regular-file value without deleting a concurrent entry."""
+    directory = _open_parent_directory(path)
+    quarantine_name = ""
+    try:
+        for _ in range(16):
+            quarantine_name = f".{path.name}.cas.{secrets.token_hex(8)}"
+            try:
+                _rename_noreplace(directory, path.name, quarantine_name)
+                break
+            except FileExistsError:
+                quarantine_name = ""
+                continue
+            except FileNotFoundError as error:
+                quarantine_name = ""
+                raise RuntimeError(f"{label} changed concurrently: {path}") from error
+        if not quarantine_name:
+            raise RuntimeError(f"Could not allocate a safe CAS quarantine in {path.parent}")
+
+        try:
+            displaced = _read_bounded_text_at(directory, quarantine_name, limit, label)
+        except Exception:
+            if _restore_quarantine(directory, quarantine_name, path.name):
+                quarantine_name = ""
+            os.fsync(directory)
+            raise
+        if displaced != expected:
+            if _restore_quarantine(directory, quarantine_name, path.name):
+                quarantine_name = ""
+            os.fsync(directory)
+            raise RuntimeError(f"{label} changed concurrently: {path}")
+
+        # The moved entry is descriptor-validated as our exact candidate.
+        # Deleting it linearizes removal; any concurrent creator at the original
+        # destination is a later entry and is never touched.
+        os.unlink(quarantine_name, dir_fd=directory)
+        quarantine_name = ""
+        os.fsync(directory)
+    finally:
+        # As with write CAS, an un-restored quarantine is deliberately kept.
+        os.close(directory)
+
+
 def refine_config_path() -> Path:
     override = os.environ.get("VOXTYPE_REFINE_CONFIG", "")
     if override:
@@ -125,23 +576,36 @@ def prompt_path() -> Path:
         return Path(override).expanduser()
     return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "voxtype" / "refine-prompt.md"
 
+
 def ensure_prompt_file(path: Path) -> Path:
-    if path.exists():
+    existing = read_bounded_text(
+        path,
+        MAX_PROMPT_BYTES,
+        "refine prompt",
+        missing_ok=True,
+    )
+    if existing is not None:
         return path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(DEFAULT_SYSTEM if DEFAULT_SYSTEM.endswith("\n") else DEFAULT_SYSTEM + "\n", encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    tmp.replace(path)
+    body = DEFAULT_SYSTEM if DEFAULT_SYSTEM.endswith("\n") else DEFAULT_SYSTEM + "\n"
+    atomic_write_text(
+        path,
+        body,
+        MAX_PROMPT_BYTES,
+        "refine prompt",
+        expected=None,
+    )
     return path
 
 
 def load_system_prompt(path: Path) -> str:
-    if not path.exists():
+    text = read_bounded_text(
+        path,
+        MAX_PROMPT_BYTES,
+        "refine prompt",
+        missing_ok=True,
+    )
+    if text is None:
         return DEFAULT_SYSTEM
-    text = path.read_text(encoding="utf-8")
-    if len(text.encode("utf-8")) > MAX_PROMPT_BYTES:
-        raise RuntimeError(f"refine prompt is unexpectedly large: {path}")
     stripped = text.strip()
     return stripped if stripped else DEFAULT_SYSTEM
 
@@ -153,23 +617,38 @@ def dictionary_path() -> Path:
 
 
 def ensure_dictionary_file(path: Path) -> Path:
-    if path.exists():
+    existing = read_bounded_text(
+        path,
+        MAX_DICTIONARY_BYTES,
+        "refine dictionary",
+        missing_ok=True,
+    )
+    if existing is not None:
         return path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
     body = DEFAULT_DICTIONARY if DEFAULT_DICTIONARY.endswith("\n") else DEFAULT_DICTIONARY + "\n"
-    tmp.write_text(body, encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    tmp.replace(path)
+    atomic_write_text(
+        path,
+        body,
+        MAX_DICTIONARY_BYTES,
+        "refine dictionary",
+        expected=None,
+    )
     return path
 
 
 def load_dictionary(path: Path) -> str:
-    if not path.exists():
+    text = read_bounded_text(
+        path,
+        MAX_DICTIONARY_BYTES,
+        "refine dictionary",
+        missing_ok=True,
+    )
+    if text is None:
         return ""
-    text = path.read_text(encoding="utf-8")
-    if len(text.encode("utf-8")) > MAX_DICTIONARY_BYTES:
-        raise RuntimeError(f"refine dictionary is unexpectedly large: {path}")
+    return dictionary_terms(text)
+
+
+def dictionary_terms(text: str) -> str:
     terms: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
@@ -207,10 +686,13 @@ def parse_refine_toml(text: str) -> dict[str, str]:
 def load_selection(path: Path) -> tuple[Provider, str]:
     provider_id = DEFAULT_PROVIDER
     model_override: str | None = None
-    if path.exists():
-        text = path.read_text(encoding="utf-8")
-        if len(text.encode("utf-8")) > MAX_REFINE_CONFIG_BYTES:
-            raise RuntimeError(f"refine config is unexpectedly large: {path}")
+    text = read_bounded_text(
+        path,
+        MAX_REFINE_CONFIG_BYTES,
+        "refine config",
+        missing_ok=True,
+    )
+    if text is not None:
         parsed = parse_refine_toml(text)
         if parsed.get("provider"):
             provider_id = parsed["provider"].strip().lower()
@@ -222,6 +704,10 @@ def load_selection(path: Path) -> tuple[Provider, str]:
     if provider_id not in PROVIDERS:
         raise RuntimeError(f"unknown refine provider {provider_id!r}")
     provider = PROVIDERS[provider_id]
+    if provider.id == "local":
+        override = os.environ.get("VOXTYPE_LOCAL_BASE_URL", "").strip()
+        if override:
+            provider = replace(provider, base_url=override)
     model = os.environ.get("VOXTYPE_REFINE_MODEL", "").strip() or model_override or provider.model
     return provider, model
 
@@ -229,15 +715,65 @@ def load_selection(path: Path) -> tuple[Provider, str]:
 def write_refine_config(path: Path, provider_id: str) -> None:
     if provider_id not in PROVIDERS:
         raise RuntimeError(f"unknown refine provider {provider_id!r}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    body = (
-        f"# Voxtype LLM refine provider. Switched by: voxtype-refine set <id>\n"
-        f"provider = \"{provider_id}\"\n"
+    for _ in range(8):
+        current = read_bounded_text(
+            path,
+            MAX_REFINE_CONFIG_BYTES,
+            "refine config",
+            missing_ok=True,
+        )
+        if current is None:
+            updated = (
+                "# Voxtype LLM refine provider. Switched by: voxtype-refine set <id>\n"
+                f"provider = {json.dumps(provider_id)}\n"
+            )
+        else:
+            updated = set_top_level_string(current, "provider", provider_id)
+        if updated == current:
+            return
+        try:
+            atomic_write_text(
+                path,
+                updated,
+                MAX_REFINE_CONFIG_BYTES,
+                "refine config",
+                expected=current,
+            )
+            return
+        except RuntimeError as error:
+            if "changed concurrently" not in str(error):
+                raise
+    raise RuntimeError(f"refine config kept changing during update: {path}")
+
+
+def set_top_level_string(text: str, key: str, value: str | None) -> str:
+    """Losslessly set/remove one top-level TOML string assignment."""
+    lines = text.splitlines(keepends=True)
+    in_top_level = True
+    for index, line in enumerate(lines):
+        if re.match(r"^\s*\[[^]]+\]", line):
+            in_top_level = False
+        if not in_top_level or line.lstrip().startswith("#"):
+            continue
+        match = re.match(rf"^(\s*){re.escape(key)}\s*=.*?(\r?\n)?$", line)
+        if not match:
+            continue
+        if value is None:
+            del lines[index]
+        else:
+            newline = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+            lines[index] = f"{match.group(1)}{key} = {json.dumps(value)}{newline}"
+        return "".join(lines)
+
+    if value is None:
+        return text
+    insert_at = next(
+        (index for index, line in enumerate(lines) if re.match(r"^\s*\[[^]]+\]", line)),
+        len(lines),
     )
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(body, encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    tmp.replace(path)
+    prefix = "" if insert_at == 0 or lines[insert_at - 1].endswith(("\n", "\r\n")) else "\n"
+    lines.insert(insert_at, f"{prefix}{key} = {json.dumps(value)}\n")
+    return "".join(lines)
 
 
 def strip_output(text: str) -> str:
@@ -290,22 +826,111 @@ def expiry_seconds(expires: Any) -> float | None:
     return value
 
 
-def load_oauth(provider_id: str) -> dict[str, Any]:
-    path = Path(os.environ.get("VOXTYPE_OMP_AGENT_DB", str(Path.home() / ".omp" / "agent" / "agent.db")))
-    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+def credential_database_path() -> Path:
+    override = os.environ.get("VOXTYPE_OMP_AGENT_DB", "")
+    return Path(override).expanduser() if override else Path.home() / ".omp" / "agent" / "agent.db"
+
+
+def _credential_database_identity(path: Path) -> tuple[int, int, int] | None:
+    """Return a bounded regular-file identity without following the path."""
     try:
-        row = con.execute(
-            "select data from auth_credentials where provider = ? limit 1",
-            (provider_id,),
-        ).fetchone()
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise RuntimeError("unsafe credential database")
+    if metadata.st_size > MAX_CREDENTIAL_DB_BYTES:
+        raise RuntimeError("credential database is unexpectedly large")
+    return metadata.st_dev, metadata.st_ino, metadata.st_size
+
+
+def _assert_credential_database_unchanged(
+    path: Path,
+    expected: tuple[int, int, int],
+) -> None:
+    if _credential_database_identity(path) != expected:
+        raise RuntimeError("credential database changed while reading")
+
+
+def _credential_missing(missing_ok: bool) -> None:
+    if missing_ok:
+        return None
+    raise RuntimeError("no OhMyPi login for the selected provider; run omp /login")
+
+
+def _load_credential_payload(
+    provider_id: str,
+    *,
+    missing_ok: bool,
+) -> dict[str, Any] | None:
+    """Read one bounded credential object from a stable read-only database."""
+    path = credential_database_path()
+    identity = _credential_database_identity(path)
+    if identity is None:
+        return _credential_missing(missing_ok)
+
+    absolute_path = os.path.abspath(os.fspath(path))
+    uri = f"file:{urllib.parse.quote(absolute_path, safe='/')}?mode=ro"
+    try:
+        connection = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as error:
+        _assert_credential_database_unchanged(path, identity)
+        raise RuntimeError("could not read the OhMyPi credential database") from error
+
+    try:
+        _assert_credential_database_unchanged(path, identity)
+        try:
+            row = connection.execute(
+                "select substr(cast(data as blob), 1, ?) "
+                "from auth_credentials where provider = ? limit 1",
+                (MAX_CREDENTIAL_JSON_BYTES + 1, provider_id),
+            ).fetchone()
+        except sqlite3.Error as error:
+            _assert_credential_database_unchanged(path, identity)
+            raise RuntimeError("could not read the OhMyPi credential database") from error
+        _assert_credential_database_unchanged(path, identity)
     finally:
-        con.close()
-    if row is None:
-        raise RuntimeError(f"no OhMyPi login for {provider_id}; run omp /login {provider_id}")
-    data = json.loads(row[0])
-    if not isinstance(data, dict) or not data.get("access"):
-        raise RuntimeError(f"OhMyPi credential for {provider_id} is missing an access token")
+        connection.close()
+
+    if row is None or row[0] is None:
+        return _credential_missing(missing_ok)
+    raw = row[0]
+    if isinstance(raw, memoryview):
+        encoded = raw.tobytes()
+    elif isinstance(raw, bytes):
+        encoded = raw
+    elif isinstance(raw, str):
+        encoded = raw.encode("utf-8")
+    else:
+        raise RuntimeError("OhMyPi credential data has an invalid shape")
+    if len(encoded) > MAX_CREDENTIAL_JSON_BYTES:
+        raise RuntimeError("OhMyPi credential data is too large")
+    try:
+        data = json.loads(encoded.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("OhMyPi credential data is invalid") from error
+    if not isinstance(data, dict):
+        raise RuntimeError("OhMyPi credential data has an invalid shape")
     return data
+
+
+def load_oauth(provider_id: str, *, missing_ok: bool = False) -> dict[str, Any] | None:
+    data = _load_credential_payload(provider_id, missing_ok=missing_ok)
+    if data is None:
+        return None
+    access = data.get("access")
+    if access is None or (isinstance(access, str) and not access.strip()):
+        if missing_ok:
+            return None
+        raise RuntimeError("OhMyPi credential is missing an access token")
+    if not isinstance(access, str):
+        raise RuntimeError("OhMyPi credential data has an invalid shape")
+    return data
+
+
+def oauth_available(provider_id: str) -> bool:
+    """Return readiness without exposing a credential object to the caller."""
+    return load_oauth(provider_id, missing_ok=True) is not None
 
 
 def refresh_oauth(omp_provider: str, cred: dict[str, Any]) -> str:
@@ -353,11 +978,37 @@ def refresh_oauth(omp_provider: str, cred: dict[str, Any]) -> str:
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            payload = json.load(resp)
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+            payload = json.loads(read_bounded_response(resp).decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, OSError, RuntimeError):
         return access
     token = payload.get("access_token")
     return str(token) if token else access
+
+
+def read_bounded_response(response: Any, limit: int = MAX_NETWORK_RESPONSE_BYTES) -> bytes:
+    """Read a provider response with a hard ceiling, regardless of headers."""
+    content_length = None
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        try:
+            raw_length = headers.get("Content-Length")
+            content_length = int(raw_length) if raw_length is not None else None
+        except (TypeError, ValueError):
+            content_length = None
+    if content_length is not None and content_length > limit:
+        raise RuntimeError("refine provider response exceeded the byte limit")
+
+    chunks: list[bytes] = []
+    collected = 0
+    while collected <= limit:
+        chunk = response.read(min(NETWORK_READ_CHUNK_BYTES, limit + 1 - collected))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        collected += len(chunk)
+    if collected > limit:
+        raise RuntimeError("refine provider response exceeded the byte limit")
+    return b"".join(chunks)
 
 
 def http_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
@@ -368,7 +1019,10 @@ def http_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeou
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.load(resp)
+        decoded = json.loads(read_bounded_response(resp).decode("utf-8"))
+    if not isinstance(decoded, dict):
+        raise RuntimeError("refine provider returned an invalid JSON response")
+    return decoded
 
 
 def http_bytes(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> bytes:
@@ -379,7 +1033,7 @@ def http_bytes(url: str, headers: dict[str, str], payload: dict[str, Any], timeo
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+        return read_bounded_response(resp)
 
 
 def complete(provider: Provider, model: str, user: str, system: str) -> str:
@@ -556,6 +1210,16 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def read_bounded_stdin(limit: int = MAX_TRANSCRIPT_BYTES) -> str:
+    raw = sys.stdin.buffer.read(limit + 1)
+    if len(raw) > limit:
+        raise RuntimeError("transcript exceeded the byte limit")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RuntimeError("transcript is not valid UTF-8") from error
+
+
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
@@ -578,7 +1242,7 @@ def main(argv: list[str] | None = None) -> int:
 
         return 2
     try:
-        sys.stdout.write(refine_text(sys.stdin.read()))
+        sys.stdout.write(refine_text(read_bounded_stdin()))
         return 0
     except (OSError, RuntimeError, urllib.error.URLError, TimeoutError, json.JSONDecodeError, sqlite3.Error):
         return 1

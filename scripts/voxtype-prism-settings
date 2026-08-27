@@ -1,0 +1,1454 @@
+#!/usr/bin/env python3
+"""Bounded JSON settings interface for the Voxtype Prism workbench.
+
+The QML panel gets normalized values only. It never reads TOML, invokes
+systemctl, opens OhMyPi's credential database, or handles provider tokens.
+
+    voxtype-prism-settings snapshot
+    voxtype-prism-settings apply       # JSON request on stdin
+    voxtype-prism-settings test-refine # JSON request on stdin
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import time
+import tomllib
+from dataclasses import dataclass, replace
+from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from typing import Any, Callable
+
+
+PROTOCOL = 1
+MAX_REQUEST_BYTES = 128 * 1024
+MAX_VOXTYPE_CONFIG_BYTES = 512 * 1024
+MAX_INDICATOR_BYTES = 4 * 1024
+MAX_HOOK_STATE_BYTES = 16 * 1024
+MAX_MODEL_BYTES = 512
+MAX_TEST_SAMPLE_BYTES = 4 * 1024
+MAX_TEST_OUTPUT_BYTES = 64 * 1024
+MAX_TRAMPOLINE_BYTES = 4 * 1024
+MAX_TRANSACTION_JOURNAL_BYTES = 256 * 1024
+TRANSACTION_JOURNAL_VERSION = 1
+
+INDICATOR_PRESETS = ("signal", "halo", "bar-pulse")
+INDICATOR_POSITIONS = ("bottom-center", "top-center")
+DEFAULT_INDICATOR: dict[str, Any] = {
+    "version": 1,
+    "preset": "signal",
+    "position": "bottom-center",
+    "scale": 1.0,
+    "motion": True,
+    "glow": 0.6,
+}
+
+
+def _load_refine_module() -> Any:
+    path = Path(__file__).with_name("voxtype-refine")
+    loader = SourceFileLoader("voxtype_prism_refine_backend", str(path))
+    spec = importlib.util.spec_from_loader("voxtype_prism_refine_backend", loader)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load the Voxtype Prism refine backend")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+REFINE = _load_refine_module()
+
+
+class SettingsError(RuntimeError):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        field: str | None = None,
+        retryable: bool = False,
+        details: dict[str, Any] | None = None,
+        snapshot: dict[str, Any] | None = None,
+        committed: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.field = field
+        self.retryable = retryable
+        self.details = details
+        self.snapshot = snapshot
+        self.committed = committed
+
+
+@dataclass(frozen=True)
+class SourceBundle:
+    voxtype_config: str | None
+    refine_config: str | None
+    prompt: str | None
+    dictionary: str | None
+    indicator: str | None
+    hook_state: str | None
+
+
+@dataclass(frozen=True)
+class HookInfo:
+    kind: str
+    command: str | None
+    assignment: str | None
+    start: int | None
+    end: int | None
+    indent: str = ""
+    newline: str = "\n"
+
+
+def xdg_path(env_name: str, fallback: Path) -> Path:
+    value = os.environ.get(env_name, "")
+    return Path(value).expanduser() if value else fallback
+
+
+def voxtype_config_path() -> Path:
+    override = os.environ.get("VOXTYPE_CONFIG", "")
+    if override:
+        return Path(override).expanduser()
+    return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "voxtype" / "config.toml"
+
+
+def indicator_path() -> Path:
+    override = os.environ.get("VOXTYPE_PRISM_INDICATOR", "")
+    if override:
+        return Path(override).expanduser()
+    return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "voxtype-prism" / "indicator.json"
+
+
+def hook_state_path() -> Path:
+    override = os.environ.get("VOXTYPE_PRISM_HOOK_STATE", "")
+    if override:
+        return Path(override).expanduser()
+    return (
+        xdg_path("XDG_STATE_HOME", Path.home() / ".local" / "state")
+        / "voxtype-prism"
+        / "refine-hook.json"
+    )
+
+
+def transaction_journal_path() -> Path:
+    """Return Prism's fixed, plugin-owned settings transaction journal."""
+    return (
+        xdg_path("XDG_STATE_HOME", Path.home() / ".local" / "state")
+        / "voxtype-prism"
+        / "settings-transaction.json"
+    )
+
+
+def refine_command() -> str:
+    override = os.environ.get("VOXTYPE_PRISM_REFINE_COMMAND", "")
+    path = Path(override).expanduser() if override else Path(__file__).resolve().with_name("voxtype-refine")
+    return os.path.abspath(os.fspath(path))
+
+
+def legacy_trampoline_path() -> Path:
+    override = os.environ.get("VOXTYPE_PRISM_LEGACY_TRAMPOLINE", "")
+    if override:
+        return Path(override).expanduser()
+    return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "voxtype" / "llm-refine.py"
+
+
+def source_specs() -> tuple[tuple[str, Path, int, str], ...]:
+    return (
+        ("voxtype_config", voxtype_config_path(), MAX_VOXTYPE_CONFIG_BYTES, "Voxtype config"),
+        ("refine_config", REFINE.refine_config_path(), REFINE.MAX_REFINE_CONFIG_BYTES, "refine config"),
+        ("prompt", REFINE.prompt_path(), REFINE.MAX_PROMPT_BYTES, "refine prompt"),
+        ("dictionary", REFINE.dictionary_path(), REFINE.MAX_DICTIONARY_BYTES, "refine dictionary"),
+        ("indicator", indicator_path(), MAX_INDICATOR_BYTES, "indicator settings"),
+        ("hook_state", hook_state_path(), MAX_HOOK_STATE_BYTES, "refine hook state"),
+    )
+
+
+def _source_spec_map() -> dict[str, tuple[Path, int, str]]:
+    """Resolve journal source IDs through the current managed-source registry."""
+    return {
+        source_id: (path, limit, label)
+        for source_id, path, limit, label in source_specs()
+    }
+
+
+def read_sources() -> SourceBundle:
+    values: dict[str, str | None] = {}
+    for name, path, limit, label in source_specs():
+        values[name] = REFINE.read_bounded_text(path, limit, label, missing_ok=True)
+    return SourceBundle(**values)
+
+
+def composite_revision(bundle: SourceBundle) -> str:
+    digest = hashlib.sha256()
+    for name, path, _limit, _label in source_specs():
+        raw = getattr(bundle, name)
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(os.path.abspath(os.fspath(path)).encode("utf-8"))
+        digest.update(b"\0")
+        if raw is None:
+            digest.update(b"missing")
+        else:
+            digest.update(b"present\0")
+            digest.update(raw.encode("utf-8"))
+        digest.update(b"\0")
+    return "sha256:" + digest.hexdigest()
+
+
+def _require_text_bytes(value: Any, field: str, limit: int) -> str:
+    if not isinstance(value, str):
+        raise SettingsError("invalid_setting", "Expected text.", field=field)
+    if len(value.encode("utf-8")) > limit:
+        raise SettingsError("invalid_setting", "Text is too large.", field=field)
+    return value
+
+
+def _require_number(value: Any, field: str, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise SettingsError("invalid_setting", "Expected a number.", field=field)
+    number = float(value)
+    if not minimum <= number <= maximum:
+        raise SettingsError(
+            "invalid_setting",
+            f"Value must be between {minimum:g} and {maximum:g}.",
+            field=field,
+        )
+    return number
+
+
+def normalize_indicator(payload: Any) -> dict[str, Any]:
+    if payload is None:
+        return dict(DEFAULT_INDICATOR)
+    if not isinstance(payload, dict):
+        raise SettingsError("invalid_setting", "Indicator settings must be an object.", field="indicator")
+    allowed = set(DEFAULT_INDICATOR)
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise SettingsError(
+            "invalid_setting",
+            "Indicator settings contain unsupported fields.",
+            field=f"indicator.{unknown[0]}",
+        )
+    if payload.get("version") != 1:
+        raise SettingsError("invalid_setting", "Unsupported indicator settings version.", field="indicator.version")
+    preset = payload.get("preset")
+    position = payload.get("position")
+    motion = payload.get("motion")
+    if preset not in INDICATOR_PRESETS:
+        raise SettingsError("invalid_setting", "Unknown indicator preset.", field="indicator.preset")
+    if position not in INDICATOR_POSITIONS:
+        raise SettingsError("invalid_setting", "Unknown indicator position.", field="indicator.position")
+    if not isinstance(motion, bool):
+        raise SettingsError("invalid_setting", "Expected true or false.", field="indicator.motion")
+    return {
+        "version": 1,
+        "preset": preset,
+        "position": position,
+        "scale": _require_number(payload.get("scale"), "indicator.scale", 0.75, 1.5),
+        "motion": motion,
+        "glow": _require_number(payload.get("glow"), "indicator.glow", 0.0, 1.0),
+    }
+
+
+def parse_indicator(raw: str | None) -> dict[str, Any]:
+    if raw is None:
+        return dict(DEFAULT_INDICATOR)
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise SettingsError("invalid_setting", "Indicator settings are not valid JSON.", field="indicator") from error
+    return normalize_indicator(payload)
+
+
+def serialize_indicator(settings: dict[str, Any]) -> str:
+    ordered = {key: settings[key] for key in DEFAULT_INDICATOR}
+    return json.dumps(ordered, indent=2) + "\n"
+
+
+def selection_from_raw(raw: str | None) -> tuple[Any, str, bool]:
+    try:
+        parsed = tomllib.loads(raw or "")
+    except tomllib.TOMLDecodeError as error:
+        raise SettingsError("invalid_setting", "Refine settings are not valid TOML.", field="refine") from error
+    provider_value = parsed.get("provider", REFINE.DEFAULT_PROVIDER)
+    if not isinstance(provider_value, str):
+        raise SettingsError("invalid_setting", "Refine provider must be text.", field="refine.provider")
+    provider_id = provider_value.strip().lower()
+    if provider_id not in REFINE.PROVIDERS:
+        raise SettingsError("invalid_setting", "Unknown refine provider.", field="refine.provider")
+    provider = REFINE.PROVIDERS[provider_id]
+    model_value = parsed.get("model", "")
+    if not isinstance(model_value, str):
+        raise SettingsError("invalid_setting", "Refine model must be text.", field="refine.model")
+    model_override = model_value.strip()
+    return provider, model_override or provider.model, bool(model_override)
+
+
+def provider_readiness(provider: Any) -> str:
+    if provider.omp_provider is None:
+        # This means no credential is required. Reachability is deliberately
+        # tested only by the explicit test-refine action.
+        return "ready"
+    try:
+        ready = REFINE.oauth_available(provider.omp_provider)
+    except (OSError, RuntimeError):
+        return "unavailable"
+    return "ready" if ready else "missing"
+
+
+def _section_body_span(text: str, section_name: str) -> tuple[int, int] | None:
+    offset = 0
+    body_start: int | None = None
+    for line in text.splitlines(keepends=True):
+        section = re.match(r"^\s*\[([^]]+)\]\s*(?:#.*)?(?:\r?\n)?$", line)
+        if section:
+            if body_start is not None:
+                return body_start, offset
+            if section.group(1).strip() == section_name:
+                body_start = offset + len(line)
+        offset += len(line)
+    return None if body_start is None else (body_start, len(text))
+
+
+def _decode_toml_string(raw: str) -> str | None:
+    try:
+        payload = tomllib.loads(f"value = {raw}\n")
+    except tomllib.TOMLDecodeError:
+        return None
+    value = payload.get("value")
+    return value if isinstance(value, str) else None
+
+
+def _normalized_absolute(path: Path | str) -> str:
+    return os.path.abspath(os.fspath(Path(path).expanduser()))
+
+
+def _is_exact_legacy_trampoline(command: str) -> bool:
+    wrapper = legacy_trampoline_path()
+    if _normalized_absolute(command) != _normalized_absolute(wrapper):
+        return False
+    try:
+        source = REFINE.read_bounded_text(
+            wrapper,
+            MAX_TRAMPOLINE_BYTES,
+            "legacy Prism trampoline",
+            missing_ok=False,
+        )
+        tree = ast.parse(source or "")
+    except (RuntimeError, SyntaxError, ValueError):
+        return False
+
+    body = list(tree.body)
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+        body.pop(0)
+    if len(body) != 3:
+        return False
+    first, second, third = body
+    if not (
+        isinstance(first, ast.ImportFrom)
+        and first.module == "pathlib"
+        and len(first.names) == 1
+        and first.names[0].name == "Path"
+        and first.names[0].asname is None
+    ):
+        return False
+    if not (
+        isinstance(second, ast.Import)
+        and len(second.names) == 1
+        and second.names[0].name == "runpy"
+        and second.names[0].asname is None
+    ):
+        return False
+    if not isinstance(third, ast.Expr) or not isinstance(third.value, ast.Call):
+        return False
+    call = third.value
+    if not (
+        isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "runpy"
+        and call.func.attr == "run_path"
+        and len(call.args) == 1
+        and len(call.keywords) == 1
+        and call.keywords[0].arg == "run_name"
+        and isinstance(call.keywords[0].value, ast.Constant)
+        and call.keywords[0].value.value == "__main__"
+    ):
+        return False
+    outer = call.args[0]
+    if not (
+        isinstance(outer, ast.Call)
+        and isinstance(outer.func, ast.Name)
+        and outer.func.id == "str"
+        and len(outer.args) == 1
+        and not outer.keywords
+    ):
+        return False
+    path_call = outer.args[0]
+    if not (
+        isinstance(path_call, ast.Call)
+        and isinstance(path_call.func, ast.Name)
+        and path_call.func.id == "Path"
+        and len(path_call.args) == 1
+        and not path_call.keywords
+        and isinstance(path_call.args[0], ast.Constant)
+        and isinstance(path_call.args[0].value, str)
+    ):
+        return False
+    return _normalized_absolute(path_call.args[0].value) == refine_command()
+
+
+def inspect_hook(text: str | None) -> HookInfo:
+    source = text or ""
+    bounds = _section_body_span(source, "output.post_process")
+    if bounds is None:
+        return HookInfo("none", None, None, None, None)
+    start, end = bounds
+    offset = start
+    matches: list[HookInfo] = []
+    for line in source[start:end].splitlines(keepends=True):
+        match = re.match(r"^(\s*)command\s*=\s*(.*?)(?:\s+#.*)?(\r?\n)?$", line)
+        if match and not line.lstrip().startswith("#"):
+            value = _decode_toml_string(match.group(2).rstrip())
+            newline = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+            matches.append(
+                HookInfo("unknown", value, line, offset, offset + len(line), match.group(1), newline)
+            )
+        offset += len(line)
+    if len(matches) != 1:
+        return HookInfo("none", None, None, None, None) if not matches else HookInfo("foreign", None, None, None, None)
+    found = matches[0]
+    if found.command == refine_command():
+        kind = "prism"
+    elif found.command is not None and _is_exact_legacy_trampoline(found.command):
+        kind = "legacy-prism"
+    else:
+        kind = "foreign"
+    return HookInfo(kind, found.command, found.assignment, found.start, found.end, found.indent, found.newline)
+
+
+def set_hook_assignment(
+    text: str,
+    command: str | None,
+    *,
+    exact_assignment: str | None = None,
+) -> str:
+    hook = inspect_hook(text)
+    if exact_assignment is not None:
+        replacement = exact_assignment
+        if not replacement.endswith(("\n", "\r\n")):
+            replacement += hook.newline or "\n"
+    elif command is not None:
+        replacement = f"{hook.indent}command = {json.dumps(command)}{hook.newline or chr(10)}"
+    else:
+        replacement = ""
+
+    if hook.start is not None and hook.end is not None:
+        return text[: hook.start] + replacement + text[hook.end :]
+    if command is None and exact_assignment is None:
+        return text
+    bounds = _section_body_span(text, "output.post_process")
+    if bounds is not None:
+        start, _end = bounds
+        return text[:start] + replacement + text[start:]
+    separator = "" if not text or text.endswith("\n") else "\n"
+    return f"{text}{separator}\n[output.post_process]\n{replacement}"
+
+
+def _prior_hook_payload(hook: HookInfo) -> dict[str, Any]:
+    return {
+        "kind": hook.kind,
+        "assignment": hook.assignment,
+    }
+
+
+def load_hook_state(raw: str | None) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise SettingsError("invalid_setting", "Refine ownership state is invalid.") from error
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise SettingsError("invalid_setting", "Unsupported refine ownership state.")
+    if not isinstance(payload.get("config"), str) or not isinstance(payload.get("managedCommand"), str):
+        raise SettingsError("invalid_setting", "Refine ownership state is incomplete.")
+    if not Path(payload["config"]).expanduser().is_absolute():
+        raise SettingsError("invalid_setting", "Refine ownership config path must be absolute.")
+    if not Path(payload["managedCommand"]).expanduser().is_absolute():
+        raise SettingsError("invalid_setting", "Refine ownership command path must be absolute.")
+    if not isinstance(payload.get("active"), bool):
+        raise SettingsError("invalid_setting", "Refine ownership active state is invalid.")
+    if "migration" in payload and not isinstance(payload["migration"], bool):
+        raise SettingsError("invalid_setting", "Refine ownership migration state is invalid.")
+    if "disabledAt" in payload and (
+        isinstance(payload["disabledAt"], bool) or not isinstance(payload["disabledAt"], int)
+    ):
+        raise SettingsError("invalid_setting", "Refine ownership timestamp is invalid.")
+    prior = payload.get("prior")
+    if not isinstance(prior, dict) or prior.get("kind") not in {"none", "prism", "legacy-prism", "foreign"}:
+        raise SettingsError("invalid_setting", "Refine ownership state has invalid prior-hook data.")
+    assignment = prior.get("assignment")
+    if assignment is not None and not isinstance(assignment, str):
+        raise SettingsError("invalid_setting", "Refine ownership state has invalid prior assignment.")
+    if len((assignment or "").encode("utf-8")) > MAX_HOOK_STATE_BYTES // 2:
+        raise SettingsError("invalid_setting", "Refine ownership prior assignment is too large.")
+    if prior["kind"] == "none" and assignment is not None:
+        raise SettingsError("invalid_setting", "An absent prior hook cannot have an assignment.")
+    if prior["kind"] != "none":
+        if assignment is None or len(assignment.splitlines(keepends=True)) != 1:
+            raise SettingsError("invalid_setting", "Refine ownership prior assignment is not one line.")
+        line = assignment.rstrip("\r\n")
+        match = re.match(r"^\s*command\s*=\s*(.*?)(?:\s+#.*)?$", line)
+        if match is None or _decode_toml_string(match.group(1).rstrip()) is None:
+            raise SettingsError("invalid_setting", "Refine ownership prior assignment is invalid.")
+    return payload
+
+
+def serialize_hook_state(payload: dict[str, Any]) -> str:
+    text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    if len(text.encode("utf-8")) > MAX_HOOK_STATE_BYTES:
+        raise SettingsError("invalid_setting", "Refine ownership state is too large.")
+    return text
+
+
+def _hook_state_for_enable(hook: HookInfo) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "config": _normalized_absolute(voxtype_config_path()),
+        "managedCommand": refine_command(),
+        "active": True,
+        "prior": _prior_hook_payload(hook),
+        "migration": hook.kind == "legacy-prism",
+    }
+
+
+def _disabled_hook_state(existing: dict[str, Any] | None, hook: HookInfo) -> dict[str, Any]:
+    payload = dict(existing) if existing is not None else _hook_state_for_enable(hook)
+    payload["active"] = False
+    payload["disabledAt"] = int(time.time())
+    return payload
+
+
+def _restore_assignment_for_disable(state: dict[str, Any] | None) -> str | None:
+    if state is None:
+        return None
+    if _normalized_absolute(state["config"]) != _normalized_absolute(voxtype_config_path()):
+        raise SettingsError("hook_state_conflict", "Refine ownership state belongs to another config.")
+    if _normalized_absolute(state["managedCommand"]) != refine_command():
+        raise SettingsError("hook_state_conflict", "Refine ownership state belongs to another helper.")
+    prior = state["prior"]
+    # A foreign pre-Prism hook is restored exactly. A legacy Prism trampoline
+    # is audit provenance only; restoring it would leave refinement enabled.
+    if prior.get("kind") == "foreign" and isinstance(prior.get("assignment"), str):
+        return prior["assignment"]
+    return None
+
+
+def _serialize_refine_config(
+    raw: str | None,
+    provider: str | object = ...,
+    model: str | object = ...,
+) -> str:
+    text = raw or ""
+    if provider is not ...:
+        text = REFINE.set_top_level_string(text, "provider", str(provider))
+    if model is not ...:
+        text = REFINE.set_top_level_string(text, "model", str(model) if model else None)
+    return text
+
+
+def _refine_snapshot(bundle: SourceBundle) -> dict[str, Any]:
+    provider, model, model_override = selection_from_raw(bundle.refine_config)
+    hook = inspect_hook(bundle.voxtype_config)
+    prompt = bundle.prompt if bundle.prompt is not None and bundle.prompt.strip() else REFINE.DEFAULT_SYSTEM
+    dictionary = bundle.dictionary or ""
+    readiness = provider_readiness(provider)
+    return {
+        "enabled": hook.kind in {"prism", "legacy-prism"},
+        "provider": provider.id,
+        "model": model,
+        "modelOverride": model_override,
+        "prompt": prompt,
+        "dictionary": dictionary,
+        "readiness": readiness,
+        "hook": hook.kind,
+    }
+
+
+def snapshot_from_bundle(bundle: SourceBundle) -> dict[str, Any]:
+    indicator = parse_indicator(bundle.indicator)
+    refine = _refine_snapshot(bundle)
+    providers = []
+    for provider in REFINE.PROVIDERS.values():
+        providers.append(
+            {
+                "id": provider.id,
+                "label": provider.label,
+                "defaultModel": provider.model,
+                "readiness": provider_readiness(provider),
+            }
+        )
+    return {
+        "protocol": PROTOCOL,
+        "ok": True,
+        "revision": composite_revision(bundle),
+        "settings": {
+            "refine": refine,
+            "indicator": indicator,
+        },
+        "catalog": {
+            "providers": providers,
+            "indicator": {
+                "presets": list(INDICATOR_PRESETS),
+                "positions": list(INDICATOR_POSITIONS),
+                "scale": {"min": 0.75, "max": 1.5},
+                "glow": {"min": 0.0, "max": 1.0},
+            },
+        },
+    }
+
+
+def snapshot() -> dict[str, Any]:
+    recover_pending_transaction()
+    return snapshot_from_bundle(read_sources())
+
+
+def _validate_protocol(request: Any) -> dict[str, Any]:
+    if not isinstance(request, dict):
+        raise SettingsError("invalid_request", "Request must be a JSON object.")
+    if request.get("protocol") != PROTOCOL:
+        raise SettingsError("invalid_request", "Unsupported settings protocol.", field="protocol")
+    return request
+
+
+def _require_expected_revision(request: dict[str, Any], current: dict[str, Any]) -> None:
+    revision = request.get("expectedRevision")
+    if not isinstance(revision, str) or not revision:
+        raise SettingsError("invalid_request", "expectedRevision is required.", field="expectedRevision")
+    if revision != current["revision"]:
+        raise SettingsError(
+            "revision_conflict",
+            "Settings changed since this panel was opened. Reload and try again.",
+            retryable=True,
+            snapshot=current,
+        )
+
+
+def _merge_indicator(current: dict[str, Any], patch: Any) -> dict[str, Any]:
+    if not isinstance(patch, dict):
+        raise SettingsError("invalid_setting", "Indicator patch must be an object.", field="indicator")
+    unknown = sorted(set(patch) - (set(DEFAULT_INDICATOR) - {"version"}))
+    if unknown:
+        raise SettingsError("invalid_setting", "Unsupported indicator field.", field=f"indicator.{unknown[0]}")
+    merged = dict(current)
+    merged.update(patch)
+    return normalize_indicator(merged)
+
+
+def _validate_refine_patch(patch: Any) -> dict[str, Any]:
+    if not isinstance(patch, dict):
+        raise SettingsError("invalid_setting", "Refine patch must be an object.", field="refine")
+    allowed = {"enabled", "provider", "model", "prompt", "dictionary"}
+    unknown = sorted(set(patch) - allowed)
+    if unknown:
+        raise SettingsError("invalid_setting", "Unsupported refine field.", field=f"refine.{unknown[0]}")
+    result: dict[str, Any] = {}
+    if "enabled" in patch:
+        if not isinstance(patch["enabled"], bool):
+            raise SettingsError("invalid_setting", "Expected true or false.", field="refine.enabled")
+        result["enabled"] = patch["enabled"]
+    if "provider" in patch:
+        provider = _require_text_bytes(patch["provider"], "refine.provider", 64).strip().lower()
+        if provider not in REFINE.PROVIDERS:
+            raise SettingsError("invalid_setting", "Unknown refine provider.", field="refine.provider")
+        result["provider"] = provider
+    if "model" in patch:
+        result["model"] = _require_text_bytes(patch["model"], "refine.model", MAX_MODEL_BYTES).strip()
+    if "prompt" in patch:
+        result["prompt"] = _require_text_bytes(patch["prompt"], "refine.prompt", REFINE.MAX_PROMPT_BYTES)
+    if "dictionary" in patch:
+        result["dictionary"] = _require_text_bytes(
+            patch["dictionary"],
+            "refine.dictionary",
+            REFINE.MAX_DICTIONARY_BYTES,
+        )
+    return result
+
+
+def _assert_sources_unchanged(bundle: SourceBundle) -> None:
+    current = read_sources()
+    if composite_revision(current) != composite_revision(bundle):
+        raise SettingsError(
+            "revision_conflict",
+            "Settings changed while saving. Reload and try again.",
+            retryable=True,
+            snapshot=snapshot_from_bundle(current),
+        )
+
+
+def _write_checked(path: Path, text: str, limit: int, label: str, expected: str | None) -> None:
+    try:
+        REFINE.atomic_write_text(path, text, limit, label, expected=expected)
+    except RuntimeError as error:
+        if "changed concurrently" in str(error):
+            raise SettingsError(
+                "revision_conflict",
+                "Settings changed while saving. Reload and try again.",
+                retryable=True,
+            ) from error
+        raise
+
+
+def _unlink_checked(path: Path, expected: str, limit: int, label: str) -> None:
+    """Remove a file created by this transaction only if it is still ours."""
+    REFINE.atomic_remove_text(path, expected, limit, label)
+
+
+@dataclass(frozen=True)
+class WriteOperation:
+    source_id: str
+    path: Path
+    candidate: str
+    limit: int
+    label: str
+    previous: str | None
+    changed_name: str
+
+
+def _transaction_recovery_error(
+    message: str,
+    *,
+    state: str = "unknown",
+    sources: list[str] | None = None,
+) -> SettingsError:
+    details: dict[str, Any] = {"journalState": state}
+    if sources:
+        details["sources"] = sorted(set(sources))
+    return SettingsError(
+        "transaction_recovery_required",
+        message,
+        retryable=False,
+        details=details,
+        # A prepared journal may represent a partial save. Treat it as
+        # committed/ambiguous so callers never assume that retrying is safe.
+        committed=True,
+    )
+
+
+def _read_transaction_journal_text() -> str | None:
+    """Read the private journal without following its final path component."""
+    path = transaction_journal_path()
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise _transaction_recovery_error("Prism cannot safely open its settings journal.")
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | nofollow,
+        )
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise _transaction_recovery_error(
+            "Prism's settings journal path is unsafe. Recovery was not attempted."
+        ) from error
+
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise _transaction_recovery_error(
+                "Prism's settings journal is not a regular file. Recovery was not attempted."
+            )
+        if stat.S_IMODE(metadata.st_mode) != 0o600:
+            raise _transaction_recovery_error(
+                "Prism's settings journal permissions are unsafe. Recovery was not attempted."
+            )
+        if metadata.st_uid != os.geteuid():
+            raise _transaction_recovery_error(
+                "Prism's settings journal has an unexpected owner. Recovery was not attempted."
+            )
+        if metadata.st_size > MAX_TRANSACTION_JOURNAL_BYTES:
+            raise _transaction_recovery_error(
+                "Prism's settings journal is too large. Recovery was not attempted."
+            )
+
+        chunks: list[bytes] = []
+        collected = 0
+        while collected <= MAX_TRANSACTION_JOURNAL_BYTES:
+            chunk = os.read(
+                descriptor,
+                min(64 * 1024, MAX_TRANSACTION_JOURNAL_BYTES + 1 - collected),
+            )
+            if not chunk:
+                break
+            chunks.append(chunk)
+            collected += len(chunk)
+        if collected > MAX_TRANSACTION_JOURNAL_BYTES:
+            raise _transaction_recovery_error(
+                "Prism's settings journal grew beyond its safety limit. Recovery was not attempted."
+            )
+        try:
+            return b"".join(chunks).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise _transaction_recovery_error(
+                "Prism's settings journal is not valid UTF-8. Recovery was not attempted."
+            ) from error
+    finally:
+        os.close(descriptor)
+
+
+def _validate_transaction_payload(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != {"version", "state", "writes"}:
+        raise _transaction_recovery_error(
+            "Prism's settings journal has an invalid schema. Recovery was not attempted."
+        )
+    if (
+        isinstance(payload.get("version"), bool)
+        or not isinstance(payload.get("version"), int)
+        or payload.get("version") != TRANSACTION_JOURNAL_VERSION
+    ):
+        raise _transaction_recovery_error(
+            "Prism's settings journal uses an unsupported version. Recovery was not attempted."
+        )
+    state = payload.get("state")
+    if not isinstance(state, str) or state not in {"prepared", "committed"}:
+        raise _transaction_recovery_error(
+            "Prism's settings journal has an invalid state. Recovery was not attempted."
+        )
+    writes = payload.get("writes")
+    specs = _source_spec_map()
+    if not isinstance(writes, list) or not 1 <= len(writes) <= len(specs):
+        raise _transaction_recovery_error(
+            "Prism's settings journal has an invalid write set. Recovery was not attempted.",
+            state=state,
+        )
+
+    normalized_writes: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for write in writes:
+        if not isinstance(write, dict) or set(write) != {"source", "previous", "candidate"}:
+            raise _transaction_recovery_error(
+                "Prism's settings journal has an invalid write entry. Recovery was not attempted.",
+                state=state,
+            )
+        source_id = write.get("source")
+        if not isinstance(source_id, str) or source_id not in specs or source_id in seen:
+            raise _transaction_recovery_error(
+                "Prism's settings journal names an unmanaged source. Recovery was not attempted.",
+                state=state,
+            )
+        seen.add(source_id)
+        previous = write.get("previous")
+        candidate = write.get("candidate")
+        if (previous is not None and not isinstance(previous, str)) or not isinstance(candidate, str):
+            raise _transaction_recovery_error(
+                "Prism's settings journal contains invalid text. Recovery was not attempted.",
+                state=state,
+                sources=[source_id],
+            )
+        _path, limit, _label = specs[source_id]
+        try:
+            previous_size = len(previous.encode("utf-8")) if previous is not None else 0
+            candidate_size = len(candidate.encode("utf-8"))
+        except UnicodeEncodeError as error:
+            raise _transaction_recovery_error(
+                "Prism's settings journal contains invalid text. Recovery was not attempted.",
+                state=state,
+                sources=[source_id],
+            ) from error
+        if previous_size > limit or candidate_size > limit:
+            raise _transaction_recovery_error(
+                "Prism's settings journal contains oversized source text. Recovery was not attempted.",
+                state=state,
+                sources=[source_id],
+            )
+        normalized_writes.append(
+            {"source": source_id, "previous": previous, "candidate": candidate}
+        )
+    return {
+        "version": TRANSACTION_JOURNAL_VERSION,
+        "state": state,
+        "writes": normalized_writes,
+    }
+
+
+def _serialize_transaction_payload(payload: Any) -> str:
+    normalized = _validate_transaction_payload(payload)
+    text = json.dumps(
+        normalized,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ) + "\n"
+    if len(text.encode("utf-8")) > MAX_TRANSACTION_JOURNAL_BYTES:
+        raise SettingsError(
+            "transaction_too_large",
+            "This settings change is too large for Prism's crash-recovery journal.",
+        )
+    return text
+
+
+def _read_transaction_journal() -> tuple[str, dict[str, Any]] | None:
+    raw = _read_transaction_journal_text()
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise _transaction_recovery_error(
+            "Prism's settings journal is invalid JSON. Recovery was not attempted."
+        ) from error
+    return raw, _validate_transaction_payload(payload)
+
+
+def _write_transaction_journal(payload: dict[str, Any], expected: str | None) -> str:
+    text = _serialize_transaction_payload(payload)
+    try:
+        REFINE.atomic_write_text(
+            transaction_journal_path(),
+            text,
+            MAX_TRANSACTION_JOURNAL_BYTES,
+            "settings transaction journal",
+            expected=expected,
+        )
+    except Exception as error:
+        raise _transaction_recovery_error(
+            "Prism could not safely persist its settings journal.",
+            state=str(payload.get("state", "unknown")),
+        ) from error
+    return text
+
+
+def _remove_transaction_journal(expected: str, *, state: str) -> None:
+    try:
+        REFINE.atomic_remove_text(
+            transaction_journal_path(),
+            expected,
+            MAX_TRANSACTION_JOURNAL_BYTES,
+            "settings transaction journal",
+        )
+    except Exception as error:
+        raise _transaction_recovery_error(
+            "Prism could not safely finalize its settings journal.",
+            state=state,
+        ) from error
+
+
+def _journal_payload_for_writes(writes: list[WriteOperation]) -> dict[str, Any]:
+    return {
+        "version": TRANSACTION_JOURNAL_VERSION,
+        "state": "prepared",
+        "writes": [
+            {
+                "source": operation.source_id,
+                "previous": operation.previous,
+                "candidate": operation.candidate,
+            }
+            for operation in writes
+        ],
+    }
+
+
+def _mark_transaction_committed(prepared: dict[str, Any], prepared_text: str) -> str:
+    committed = dict(prepared)
+    committed["state"] = "committed"
+    return _write_transaction_journal(committed, prepared_text)
+
+
+def _source_text(source_id: str) -> str | None:
+    path, limit, label = _source_spec_map()[source_id]
+    return REFINE.read_bounded_text(path, limit, label, missing_ok=True)
+
+
+def _recover_transaction_payload(raw: str, payload: dict[str, Any]) -> None:
+    """Resolve one validated journal using only managed logical source IDs."""
+    state = payload["state"]
+    writes = payload["writes"]
+    current: dict[str, str | None] = {}
+    mismatched: list[str] = []
+    try:
+        for write in writes:
+            source_id = write["source"]
+            actual = _source_text(source_id)
+            current[source_id] = actual
+            allowed = (
+                {write["candidate"]}
+                if state == "committed"
+                else {write["previous"], write["candidate"]}
+            )
+            if actual not in allowed:
+                mismatched.append(source_id)
+    except Exception as error:
+        raise _transaction_recovery_error(
+            "Prism could not safely inspect every journaled source.",
+            state=state,
+        ) from error
+
+    if mismatched:
+        raise _transaction_recovery_error(
+            "Settings changed outside Prism during recovery. No conflicting value was overwritten.",
+            state=state,
+            sources=mismatched,
+        )
+
+    if state == "committed":
+        _remove_transaction_journal(raw, state=state)
+        return
+
+    specs = _source_spec_map()
+    try:
+        for write in reversed(writes):
+            source_id = write["source"]
+            previous = write["previous"]
+            candidate = write["candidate"]
+            if current[source_id] != candidate or previous == candidate:
+                continue
+            path, limit, label = specs[source_id]
+            if previous is None:
+                _unlink_checked(path, candidate, limit, label)
+            else:
+                _write_checked(path, previous, limit, label, candidate)
+    except Exception as error:
+        raise _transaction_recovery_error(
+            "Prism could not safely restore every prior setting.",
+            state=state,
+            sources=[source_id],
+        ) from error
+
+    unrestored: list[str] = []
+    try:
+        for write in writes:
+            if _source_text(write["source"]) != write["previous"]:
+                unrestored.append(write["source"])
+    except Exception as error:
+        raise _transaction_recovery_error(
+            "Prism could not verify its recovered settings.",
+            state=state,
+        ) from error
+    if unrestored:
+        raise _transaction_recovery_error(
+            "Prism could not verify every recovered setting.",
+            state=state,
+            sources=unrestored,
+        )
+    _remove_transaction_journal(raw, state=state)
+
+
+def recover_pending_transaction() -> None:
+    pending = _read_transaction_journal()
+    if pending is None:
+        return
+    raw, payload = pending
+    _recover_transaction_payload(raw, payload)
+
+
+def _commit_writes(
+    writes: list[WriteOperation],
+    writer: Callable[[Path, str, int, str, str | None], None],
+) -> list[str]:
+    if not writes:
+        return []
+    prepared = _journal_payload_for_writes(writes)
+    prepared_text = _write_transaction_journal(prepared, None)
+    try:
+        for operation in writes:
+            writer(
+                operation.path,
+                operation.candidate,
+                operation.limit,
+                operation.label,
+                operation.previous,
+            )
+    except Exception as commit_error:
+        try:
+            observed = _read_transaction_journal()
+            if observed is None or observed[0] != prepared_text or observed[1]["state"] != "prepared":
+                raise _transaction_recovery_error(
+                    "Prism's prepared settings journal changed during rollback."
+                )
+            _recover_transaction_payload(prepared_text, prepared)
+        except SettingsError as recovery_error:
+            raise SettingsError(
+                "commit_failed_recovery_required",
+                "Saving failed and Prism could not safely restore every prior file.",
+                retryable=False,
+                committed=True,
+                details=recovery_error.details,
+            ) from commit_error
+        raise SettingsError(
+            "commit_failed_rolled_back",
+            "Saving failed. Prism restored the prior settings.",
+            retryable=True,
+            committed=False,
+        ) from commit_error
+
+    try:
+        committed_text = _mark_transaction_committed(prepared, prepared_text)
+    except Exception as marker_error:
+        # If the prepared marker is still exact, the save was never committed
+        # and can use the ordinary verified rollback path. If the committed
+        # marker became visible, recovery must honor it and never roll back.
+        try:
+            observed = _read_transaction_journal()
+            if observed is not None and observed[0] == prepared_text:
+                _recover_transaction_payload(prepared_text, prepared)
+                raise SettingsError(
+                    "commit_failed_rolled_back",
+                    "Saving failed. Prism restored the prior settings.",
+                    retryable=True,
+                    committed=False,
+                ) from marker_error
+        except SettingsError as recovery_error:
+            if recovery_error.code == "commit_failed_rolled_back":
+                raise
+        raise _transaction_recovery_error(
+            "Prism could not safely finalize the committed settings journal.",
+            state="committed",
+        ) from marker_error
+
+    _remove_transaction_journal(committed_text, state="committed")
+    return [operation.changed_name for operation in writes]
+
+
+def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, check=True, capture_output=True, text=True)
+
+
+def restart_voxtype(runner: Callable[[list[str]], Any]) -> tuple[bool, bool]:
+    if os.environ.get("VOXTYPE_PRISM_NO_RESTART") == "1":
+        return False, False
+    for command in (
+        ["systemctl", "--user", "restart", "voxtype.service"],
+        ["systemctl", "--user", "is-active", "--quiet", "voxtype.service"],
+    ):
+        result = runner(command)
+        if getattr(result, "returncode", 0) != 0:
+            raise subprocess.CalledProcessError(getattr(result, "returncode", 1), command)
+    return True, True
+
+
+def apply_request(
+    request: Any,
+    runner: Callable[[list[str]], Any] | None = None,
+    *,
+    writer: Callable[[Path, str, int, str, str | None], None] | None = None,
+) -> dict[str, Any]:
+    recover_pending_transaction()
+    request = _validate_protocol(request)
+    allowed_top = {"protocol", "expectedRevision", "patch"}
+    unknown_top = sorted(set(request) - allowed_top)
+    if unknown_top:
+        raise SettingsError("invalid_request", "Request contains unsupported fields.", field=unknown_top[0])
+    patch = request.get("patch")
+    if not isinstance(patch, dict):
+        raise SettingsError("invalid_request", "patch must be an object.", field="patch")
+    unknown_domains = sorted(set(patch) - {"refine", "indicator"})
+    if unknown_domains:
+        raise SettingsError("invalid_setting", "Unsupported settings domain.", field=unknown_domains[0])
+
+    bundle = read_sources()
+    current_snapshot = snapshot_from_bundle(bundle)
+    _require_expected_revision(request, current_snapshot)
+
+    refine_patch = _validate_refine_patch(patch["refine"]) if "refine" in patch else {}
+    indicator_current = parse_indicator(bundle.indicator)
+    indicator_updated = (
+        _merge_indicator(indicator_current, patch["indicator"])
+        if "indicator" in patch
+        else indicator_current
+    )
+
+    refine_config_updated = _serialize_refine_config(
+        bundle.refine_config,
+        refine_patch.get("provider", ...),
+        refine_patch.get("model", ...),
+    )
+    prompt_updated = refine_patch.get("prompt", bundle.prompt)
+    dictionary_updated = refine_patch.get("dictionary", bundle.dictionary)
+    config_updated = bundle.voxtype_config or ""
+    state_existing = load_hook_state(bundle.hook_state)
+    state_updated: str | None = bundle.hook_state
+    hook_before = inspect_hook(bundle.voxtype_config)
+
+    if "enabled" in refine_patch:
+        enabled = refine_patch["enabled"]
+        if enabled:
+            if hook_before.kind == "foreign":
+                raise SettingsError(
+                    "post_process_conflict",
+                    "Another post-process command is already configured. Prism left it unchanged.",
+                    field="refine.enabled",
+                )
+            if hook_before.kind != "prism":
+                config_updated = set_hook_assignment(config_updated, refine_command())
+                state_updated = serialize_hook_state(_hook_state_for_enable(hook_before))
+            elif state_existing is None:
+                state_updated = serialize_hook_state(_hook_state_for_enable(hook_before))
+            else:
+                if _normalized_absolute(state_existing["config"]) != _normalized_absolute(voxtype_config_path()):
+                    raise SettingsError("hook_state_conflict", "Refine ownership state belongs to another config.")
+                if _normalized_absolute(state_existing["managedCommand"]) != refine_command():
+                    raise SettingsError("hook_state_conflict", "Refine ownership state belongs to another helper.")
+                active_state = dict(state_existing)
+                active_state["active"] = True
+                active_state.pop("disabledAt", None)
+                state_updated = serialize_hook_state(active_state)
+        else:
+            if hook_before.kind == "foreign":
+                raise SettingsError(
+                    "post_process_conflict",
+                    "The configured post-process command is not owned by Prism. It was left unchanged.",
+                    field="refine.enabled",
+                )
+            if hook_before.kind in {"prism", "legacy-prism"}:
+                restore_assignment = _restore_assignment_for_disable(state_existing)
+                config_updated = set_hook_assignment(
+                    config_updated,
+                    None,
+                    exact_assignment=restore_assignment,
+                )
+                state_updated = serialize_hook_state(_disabled_hook_state(state_existing, hook_before))
+
+    writes: list[WriteOperation] = []
+    if refine_config_updated != (bundle.refine_config or ""):
+        writes.append(WriteOperation("refine_config", REFINE.refine_config_path(), refine_config_updated, REFINE.MAX_REFINE_CONFIG_BYTES, "refine config", bundle.refine_config, "refine.selection"))
+    if prompt_updated is not None and prompt_updated != bundle.prompt:
+        writes.append(WriteOperation("prompt", REFINE.prompt_path(), prompt_updated, REFINE.MAX_PROMPT_BYTES, "refine prompt", bundle.prompt, "refine.prompt"))
+    if dictionary_updated is not None and dictionary_updated != bundle.dictionary:
+        writes.append(WriteOperation("dictionary", REFINE.dictionary_path(), dictionary_updated, REFINE.MAX_DICTIONARY_BYTES, "refine dictionary", bundle.dictionary, "refine.dictionary"))
+    if "indicator" in patch and indicator_updated != indicator_current:
+        writes.append(WriteOperation("indicator", indicator_path(), serialize_indicator(indicator_updated), MAX_INDICATOR_BYTES, "indicator settings", bundle.indicator, "indicator"))
+    if state_updated is not None and state_updated != bundle.hook_state:
+        writes.append(WriteOperation("hook_state", hook_state_path(), state_updated, MAX_HOOK_STATE_BYTES, "refine hook state", bundle.hook_state, "refine.ownership"))
+    hook_changed = config_updated != (bundle.voxtype_config or "")
+    if hook_changed:
+        writes.append(WriteOperation("voxtype_config", voxtype_config_path(), config_updated, MAX_VOXTYPE_CONFIG_BYTES, "Voxtype config", bundle.voxtype_config, "refine.enabled"))
+
+    _assert_sources_unchanged(bundle)
+    changed = _commit_writes(writes, writer or _write_checked)
+
+    attempted = False
+    verified = False
+    if hook_changed:
+        try:
+            attempted, verified = restart_voxtype(runner or run_command)
+            readback = REFINE.read_bounded_text(
+                voxtype_config_path(),
+                MAX_VOXTYPE_CONFIG_BYTES,
+                "Voxtype config",
+                missing_ok=False,
+            )
+            expected_enabled = bool(refine_patch.get("enabled"))
+            actual = inspect_hook(readback)
+            if expected_enabled and actual.kind != "prism":
+                raise RuntimeError("refine hook readback did not match")
+            if not expected_enabled and actual.kind in {"prism", "legacy-prism"}:
+                raise RuntimeError("refine hook remained enabled")
+        except Exception as error:
+            try:
+                fresh = snapshot()
+            except Exception:
+                fresh = None
+            raise SettingsError(
+                "restart_failed",
+                "Changes were saved, but Voxtype could not be restarted and verified.",
+                retryable=True,
+                committed=True,
+                snapshot=fresh,
+            ) from error
+
+    return {
+        "protocol": PROTOCOL,
+        "ok": True,
+        "changed": changed,
+        "restart": {
+            "required": hook_changed,
+            "attempted": attempted,
+            "verified": verified,
+        },
+        "snapshot": snapshot(),
+    }
+
+
+def _candidate_refine(current: dict[str, Any], candidate: Any) -> dict[str, Any]:
+    if candidate is None:
+        return {
+            "provider": current["provider"],
+            "model": current["model"],
+            "prompt": current["prompt"],
+            "dictionary": current["dictionary"],
+        }
+    patch = _validate_refine_patch(candidate)
+    patch.pop("enabled", None)
+    merged = {
+        "provider": current["provider"],
+        "model": current["model"],
+        "prompt": current["prompt"],
+        "dictionary": current["dictionary"],
+    }
+    merged.update(patch)
+    provider = REFINE.PROVIDERS[merged["provider"]]
+    if not merged["model"]:
+        merged["model"] = provider.model
+    merged["prompt"] = merged["prompt"].strip() or REFINE.DEFAULT_SYSTEM
+    return merged
+
+
+def test_refine_request(request: Any) -> dict[str, Any]:
+    recover_pending_transaction()
+    request = _validate_protocol(request)
+    allowed = {"protocol", "expectedRevision", "sample", "candidate"}
+    unknown = sorted(set(request) - allowed)
+    if unknown:
+        raise SettingsError("invalid_request", "Request contains unsupported fields.", field=unknown[0])
+    bundle = read_sources()
+    current_snapshot = snapshot_from_bundle(bundle)
+    _require_expected_revision(request, current_snapshot)
+    sample = _require_text_bytes(request.get("sample"), "sample", MAX_TEST_SAMPLE_BYTES)
+    if not sample.strip():
+        raise SettingsError("invalid_setting", "Enter a sample to refine.", field="sample")
+    candidate = _candidate_refine(current_snapshot["settings"]["refine"], request.get("candidate"))
+    provider = REFINE.PROVIDERS[candidate["provider"]]
+    if provider.id == "local":
+        override = os.environ.get("VOXTYPE_LOCAL_BASE_URL", "").strip()
+        if override:
+            provider = replace(provider, base_url=override)
+
+    # Parsing and candidate construction are intentionally local, but another
+    # settings writer may have committed since the first revision check. Never
+    # dispatch a provider request from that stale snapshot.
+    _assert_sources_unchanged(bundle)
+    started = time.monotonic()
+    try:
+        output = REFINE.complete(
+            provider,
+            candidate["model"],
+            sample,
+            REFINE.compose_system_prompt(
+                candidate["prompt"],
+                REFINE.dictionary_terms(candidate["dictionary"]),
+            ),
+        )
+    except (OSError, RuntimeError, TimeoutError, json.JSONDecodeError) as error:
+        # Do not echo arbitrary provider messages: they may contain request
+        # headers, transcript fragments, or OAuth material.
+        if "no OhMyPi login" in str(error) or "missing an access token" in str(error):
+            code = "login_required"
+            message = "Sign in to the selected provider in OhMyPi, then try again."
+        elif "byte limit" in str(error):
+            code = "provider_response_too_large"
+            message = "The provider returned more data than Prism accepts."
+        else:
+            code = "provider_test_failed"
+            message = "The provider test failed. Check the provider connection and try again."
+        raise SettingsError(code, message, retryable=True) from error
+    if not output:
+        raise SettingsError("provider_test_failed", "The provider returned an empty result.", retryable=True)
+    if len(output.encode("utf-8")) > MAX_TEST_OUTPUT_BYTES:
+        raise SettingsError("provider_response_too_large", "The refined output is too large.")
+    return {
+        "protocol": PROTOCOL,
+        "ok": True,
+        "output": output,
+        "provider": provider.id,
+        "model": candidate["model"],
+        "elapsedMs": round((time.monotonic() - started) * 1000),
+    }
+
+
+def read_json_request() -> Any:
+    raw = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
+    if len(raw) > MAX_REQUEST_BYTES:
+        raise SettingsError("invalid_request", "Request is too large.")
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SettingsError("invalid_request", "Request is not valid JSON.") from error
+
+
+def failure_payload(error: SettingsError) -> dict[str, Any]:
+    details = dict(error.details or {})
+    if error.field is not None:
+        details["field"] = error.field
+    details["retryable"] = error.retryable
+    if error.committed:
+        details["committed"] = True
+    error_payload: dict[str, Any] = {
+        "code": error.code,
+        "message": error.message,
+        "retryable": error.retryable,
+        "details": details,
+    }
+    if error.field is not None:
+        error_payload["field"] = error.field
+    if error.committed:
+        error_payload["committed"] = True
+    payload: dict[str, Any] = {
+        "protocol": PROTOCOL,
+        "ok": False,
+        "error": error_payload,
+    }
+    if error.snapshot is not None:
+        payload["snapshot"] = error.snapshot
+    return payload
+
+
+def classify_runtime_error(error: Exception) -> SettingsError:
+    message = str(error).lower()
+    if "unsafe" in message or "not a regular file" in message or "o_nofollow" in message:
+        return SettingsError("unsafe_path", "A settings path is unsafe and was not opened.")
+    if "unexpectedly large" in message or "byte limit" in message:
+        return SettingsError("oversized_file", "A settings file exceeds Prism's safety limit.")
+    if "changed concurrently" in message:
+        return SettingsError("revision_conflict", "Settings changed while saving. Reload and try again.", retryable=True)
+    return SettingsError("settings_error", "Prism could not read or save settings.")
+
+
+def emit(payload: dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n")
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    action = argv[0] if len(argv) == 1 else None
+    try:
+        if action == "snapshot":
+            emit(snapshot())
+            return 0
+        if action == "apply":
+            emit(apply_request(read_json_request()))
+            return 0
+        if action == "test-refine":
+            emit(test_refine_request(read_json_request()))
+            return 0
+        raise SettingsError("invalid_request", "Choose snapshot, apply, or test-refine.")
+    except SettingsError as error:
+        emit(failure_payload(error))
+        if action == "test-refine" and error.code not in {"invalid_request", "invalid_setting", "revision_conflict"}:
+            return 4
+        if error.code in {
+            "commit_failed_rolled_back",
+            "commit_failed_recovery_required",
+            "transaction_recovery_required",
+            "transaction_too_large",
+            "restart_failed",
+        }:
+            return 3
+        return 2
+    except Exception as error:
+        emit(failure_payload(classify_runtime_error(error)))
+        return 3
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

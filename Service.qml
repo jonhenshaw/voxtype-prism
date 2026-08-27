@@ -15,6 +15,9 @@ Item {
     property var pluginRegistry: null
     property var barWidgetRegistry: null
 
+    readonly property string pluginId: manifest && manifest.id
+        ? String(manifest.id) : "io.github.jonhenshaw.voxtype-prism"
+
     readonly property string focusedScreenName:
         Hyprland.focusedMonitor ? String(Hyprland.focusedMonitor.name || "") : ""
     readonly property var activeScreen: {
@@ -26,6 +29,11 @@ Item {
     }
 
     VoxtypeConfig { id: voxtypeConfig }
+    IndicatorRuntimeConfig { id: indicatorConfig }
+    LauncherManager {
+        id: launcher
+        enabled: Quickshell.env("VOXTYPE_PRISM_DISABLE_LAUNCHER") !== "1"
+    }
     OmarchyPalette { id: palette }
     StateReader { id: stateReader }
     AudioBridge {
@@ -47,10 +55,23 @@ Item {
                 presence: signal.presence,
                 audioRunning: audioBridge.running,
                 sampleLevels: signal.sampleLevels,
+                indicatorStyle: indicatorConfig.styleId,
+                indicatorPosition: indicatorConfig.position,
+                indicatorScale: indicatorConfig.scaleFactor,
+                indicatorMotion: indicatorConfig.motionEnabled,
+                indicatorGlow: indicatorConfig.glowIntensity,
+                launcherInstalled: launcher.installed,
+                launcherError: launcher.errorText,
                 activationNeeded: activation.needed,
                 activationBusy: activation.busy,
                 activationError: activation.errorText
             });
+        }
+
+        function settings(): string {
+            if (!root.shell || typeof root.shell.summon !== "function")
+                return "unavailable";
+            return root.shell.summon(root.pluginId, "{}") ? "ok" : "unavailable";
         }
     }
 
@@ -60,6 +81,11 @@ Item {
         audio: audioBridge
         themePalette: palette
         targetScreen: root.activeScreen
+        styleId: indicatorConfig.styleId
+        position: indicatorConfig.position
+        scaleFactor: indicatorConfig.scaleFactor
+        motionEnabled: indicatorConfig.motionEnabled
+        glowIntensity: indicatorConfig.glowIntensity
     }
 
     PrismActivation {

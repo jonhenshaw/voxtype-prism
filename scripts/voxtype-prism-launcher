@@ -1,0 +1,336 @@
+#!/usr/bin/python3
+"""Install and run Voxtype Prism's user-scoped settings launcher.
+
+The installed desktop entry shadows Voxtype's packaged configuration entry.
+It opens Prism when the plugin is installed and enabled, and falls back to the
+packaged Voxtype TUI when Prism is unavailable.  Only desktop entries carrying
+our exact ownership marker may be replaced or removed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import secrets
+import shutil
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+
+PLUGIN_ID = "io.github.jonhenshaw.voxtype-prism"
+MARKER = "X-Voxtype-Prism-Managed=true"
+MAX_DESKTOP_BYTES = 64 * 1024
+
+DESKTOP_CONTENT = f"""[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Voxtype Configuration
+GenericName=Voice-to-Text Settings
+Comment=Configure Voxtype Prism refinement, prompts, dictionary, and indicators
+Exec=bash -c "IFS=; set -f; plugin=\\${{XDG_CONFIG_HOME:-\\$HOME/.config}}/omarchy/plugins/{PLUGIN_ID}/scripts/voxtype-prism-launcher; if [[ -x \\$plugin ]]; then exec \\$plugin open; fi; exec /usr/bin/voxtype-configure-launcher"
+Icon=audio-input-microphone
+Categories=Settings;
+Keywords=voxtype;voice;dictation;transcription;refinement;prompt;indicator;settings;configuration;
+Terminal=false
+NoDisplay=false
+StartupWMClass=voxtype-prism-settings
+{MARKER}
+"""
+
+
+class LauncherError(RuntimeError):
+    pass
+
+
+def data_home() -> Path:
+    configured = os.environ.get("XDG_DATA_HOME", "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".local" / "share"
+
+
+def desktop_target() -> Path:
+    override = os.environ.get("VOXTYPE_PRISM_DESKTOP_TARGET", "").strip()
+    return Path(override).expanduser() if override else data_home() / "applications" / "voxtype-configure.desktop"
+
+
+def bounded_read(path: Path) -> bytes | None:
+    flags = os.O_RDONLY | os.O_NONBLOCK
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if not nofollow:
+        raise LauncherError("O_NOFOLLOW is required for launcher access")
+    flags |= nofollow
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise LauncherError(f"refusing unsafe launcher path: {path}") from error
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise LauncherError(f"launcher is not a regular file: {path}")
+        if metadata.st_size > MAX_DESKTOP_BYTES:
+            raise LauncherError(f"launcher is unexpectedly large: {path}")
+        chunks: list[bytes] = []
+        total = 0
+        while total <= MAX_DESKTOP_BYTES:
+            chunk = os.read(descriptor, min(16 * 1024, MAX_DESKTOP_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        if total > MAX_DESKTOP_BYTES:
+            raise LauncherError(f"launcher grew beyond the byte limit: {path}")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def write_all(descriptor: int, payload: bytes) -> None:
+    offset = 0
+    while offset < len(payload):
+        offset += os.write(descriptor, payload[offset:])
+
+
+def _restore_quarantine(directory: int, target_name: str, quarantine: str) -> None:
+    """Restore a moved entry without overwriting a concurrent replacement."""
+
+    try:
+        os.link(
+            quarantine,
+            target_name,
+            src_dir_fd=directory,
+            dst_dir_fd=directory,
+            follow_symlinks=False,
+        )
+    except FileExistsError as error:
+        raise LauncherError(
+            f"launcher changed concurrently; displaced entry retained as {quarantine}"
+        ) from error
+    os.unlink(quarantine, dir_fd=directory)
+
+
+def atomic_install(path: Path, content: str = DESKTOP_CONTENT) -> bool:
+    payload = content.encode("utf-8")
+    if len(payload) > MAX_DESKTOP_BYTES:
+        raise LauncherError("generated launcher exceeds the byte limit")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = bounded_read(path)
+    if existing is not None:
+        try:
+            text = existing.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise LauncherError(f"launcher is not valid UTF-8: {path}") from error
+        if MARKER not in text.splitlines():
+            raise LauncherError(f"refusing to replace an unowned launcher: {path}")
+        if existing == payload:
+            return False
+
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    directory = os.open(path.parent, directory_flags)
+    temporary = f".{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}"
+    quarantine = ""
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=directory,
+        )
+        write_all(descriptor, payload)
+        os.fchmod(descriptor, 0o644)
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+
+        if existing is None:
+            try:
+                os.link(
+                    temporary,
+                    path.name,
+                    src_dir_fd=directory,
+                    dst_dir_fd=directory,
+                    follow_symlinks=False,
+                )
+            except FileExistsError as error:
+                raise LauncherError("launcher changed concurrently; retry") from error
+        else:
+            quarantine = f".{path.name}.prior.{os.getpid()}.{secrets.token_hex(6)}"
+            os.rename(
+                path.name,
+                quarantine,
+                src_dir_fd=directory,
+                dst_dir_fd=directory,
+            )
+            try:
+                moved = bounded_read(path.parent / quarantine)
+            except LauncherError:
+                _restore_quarantine(directory, path.name, quarantine)
+                quarantine = ""
+                raise
+            if moved != existing:
+                _restore_quarantine(directory, path.name, quarantine)
+                quarantine = ""
+                raise LauncherError("launcher changed concurrently; retry")
+            try:
+                os.link(
+                    temporary,
+                    path.name,
+                    src_dir_fd=directory,
+                    dst_dir_fd=directory,
+                    follow_symlinks=False,
+                )
+            except FileExistsError as error:
+                # The displaced entry was Prism-owned; a concurrent entry now
+                # owns the canonical name, so preserve it and discard ours.
+                os.unlink(quarantine, dir_fd=directory)
+                quarantine = ""
+                raise LauncherError("launcher changed concurrently; retry") from error
+            os.unlink(quarantine, dir_fd=directory)
+            quarantine = ""
+        os.fsync(directory)
+        return True
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            os.unlink(temporary, dir_fd=directory)
+        except FileNotFoundError:
+            pass
+        if quarantine:
+            # A retained quarantine means restoration could not safely claim
+            # the canonical name. Never delete that displaced user entry.
+            pass
+        os.close(directory)
+
+
+def remove_owned(path: Path) -> bool:
+    existing = bounded_read(path)
+    if existing is None:
+        return False
+    try:
+        text = existing.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise LauncherError(f"launcher is not valid UTF-8: {path}") from error
+    if MARKER not in text.splitlines():
+        raise LauncherError(f"refusing to remove an unowned launcher: {path}")
+    directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    quarantine = f".{path.name}.remove.{os.getpid()}.{secrets.token_hex(6)}"
+    try:
+        os.rename(
+            path.name,
+            quarantine,
+            src_dir_fd=directory,
+            dst_dir_fd=directory,
+        )
+        try:
+            moved = bounded_read(path.parent / quarantine)
+        except LauncherError:
+            _restore_quarantine(directory, path.name, quarantine)
+            raise
+        if moved != existing:
+            _restore_quarantine(directory, path.name, quarantine)
+            raise LauncherError("launcher changed concurrently; retry")
+        os.unlink(quarantine, dir_fd=directory)
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return True
+
+
+def apply_window_rules() -> None:
+    hyprctl = os.environ.get("VOXTYPE_PRISM_HYPRCTL", "").strip() or shutil.which("hyprctl")
+    if not hyprctl:
+        return
+    rules = (
+        "float, title:^(Voxtype Prism)$",
+        "size 1120 760, title:^(Voxtype Prism)$",
+        "center, title:^(Voxtype Prism)$",
+    )
+    for rule in rules:
+        subprocess.run(
+            [hyprctl, "keyword", "windowrulev2", rule],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2,
+        )
+
+
+def stock_launcher() -> str:
+    return os.environ.get("VOXTYPE_PRISM_STOCK_LAUNCHER", "").strip() or "/usr/bin/voxtype-configure-launcher"
+
+
+def exec_stock() -> int:
+    target = stock_launcher()
+    os.execv(target, [target])
+    return 1
+
+
+def open_panel() -> int:
+    apply_window_rules()
+    shell = os.environ.get("VOXTYPE_PRISM_OMARCHY_SHELL", "").strip() or shutil.which("omarchy-shell")
+    if shell:
+        try:
+            result = subprocess.run(
+                [shell, "shell", "summon", PLUGIN_ID, "{}"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=4,
+            )
+            if result.returncode == 0 and result.stdout.strip().lower() in {"true", "ok"}:
+                return 0
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return exec_stock()
+
+
+def status(path: Path) -> dict[str, object]:
+    try:
+        content = bounded_read(path)
+    except LauncherError as error:
+        return {"state": "conflict", "target": str(path), "message": str(error)}
+    if content is None:
+        return {"state": "stock", "target": str(path)}
+    try:
+        owned = MARKER in content.decode("utf-8").splitlines()
+    except UnicodeDecodeError:
+        owned = False
+    return {"state": "prism" if owned else "conflict", "target": str(path)}
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description=__doc__)
+    result.add_argument("action", nargs="?", default="open", choices=("open", "advanced", "install", "remove", "status"))
+    return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    target = desktop_target()
+    try:
+        if args.action == "open":
+            return open_panel()
+        if args.action == "advanced":
+            return exec_stock()
+        if args.action == "install":
+            changed = atomic_install(target)
+            print(json.dumps({"ok": True, "changed": changed, **status(target)}, separators=(",", ":")))
+            return 0
+        if args.action == "remove":
+            changed = remove_owned(target)
+            print(json.dumps({"ok": True, "changed": changed, **status(target)}, separators=(",", ":")))
+            return 0
+        print(json.dumps({"ok": True, **status(target)}, separators=(",", ":")))
+        return 0
+    except (LauncherError, OSError, subprocess.SubprocessError) as error:
+        print(json.dumps({"ok": False, "error": str(error), **status(target)}, separators=(",", ":")))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

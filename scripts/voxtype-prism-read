@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import stat
@@ -13,10 +14,20 @@ from pathlib import Path
 
 MAX_CONFIG_BYTES = 512 * 1024
 MAX_PALETTE_BYTES = 64 * 1024
+MAX_PRISM_SETTINGS_BYTES = 4 * 1024
 MAX_RUNTIME_STATE_BYTES = 256
 MIN_INTERVAL_MS = 50
 MAX_INTERVAL_MS = 10_000
 RUNTIME_STATES = frozenset({"idle", "recording", "streaming", "transcribing"})
+PRISM_PRESETS = frozenset({"signal", "halo", "bar-pulse"})
+PRISM_POSITIONS = frozenset({"bottom-center", "top-center"})
+PRISM_DEFAULTS = {
+    "styleId": "signal",
+    "position": "bottom-center",
+    "scaleFactor": 1.0,
+    "motionEnabled": True,
+    "glowIntensity": 0.6,
+}
 PALETTE_KEYS = frozenset(
     {
         "accent",
@@ -44,6 +55,25 @@ PALETTE_KEYS = frozenset(
 
 class BoundedReadError(RuntimeError):
     """The source could not be consumed within the safe file boundary."""
+
+
+def xdg_config_home() -> Path:
+    value = os.environ.get("XDG_CONFIG_HOME", "")
+    return Path(value).expanduser() if value else Path.home() / ".config"
+
+
+def prism_settings_path() -> Path:
+    return xdg_config_home() / "voxtype-prism" / "indicator.json"
+
+
+def prism_defaults_status() -> str:
+    return json.dumps(PRISM_DEFAULTS, separators=(",", ":"), sort_keys=True)
+
+
+def same_lexical_path(left: Path, right: Path) -> bool:
+    """Compare names without resolving symlinks or touching the filesystem."""
+
+    return os.path.abspath(os.fspath(left)) == os.path.abspath(os.fspath(right))
 
 
 def read_bounded_regular(path: Path, max_bytes: int) -> bytes:
@@ -123,10 +153,63 @@ def palette_status(path: Path) -> str:
     return json.dumps(values, separators=(",", ":"), sort_keys=True)
 
 
+def bounded_number(value: object, default: float, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return default
+    try:
+        number = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return default
+    if not math.isfinite(number):
+        return default
+    return min(maximum, max(minimum, number))
+
+
+def prism_settings_status(path: Path) -> str:
+    """Emit only normalized indicator settings from Prism's canonical file."""
+
+    defaults = prism_defaults_status()
+    if not same_lexical_path(path, prism_settings_path()):
+        return defaults
+
+    try:
+        raw = read_bounded_regular(path, MAX_PRISM_SETTINGS_BYTES).decode("utf-8")
+        payload = json.loads(raw)
+    except (OSError, UnicodeError, ValueError, BoundedReadError):
+        return defaults
+
+    if not isinstance(payload, dict) or type(payload.get("version")) is not int:
+        return defaults
+    if payload["version"] != 1:
+        return defaults
+
+    preset = payload.get("preset")
+    position = payload.get("position")
+    normalized = {
+        "styleId": (
+            preset
+            if isinstance(preset, str) and preset in PRISM_PRESETS
+            else PRISM_DEFAULTS["styleId"]
+        ),
+        "position": (
+            position
+            if isinstance(position, str) and position in PRISM_POSITIONS
+            else PRISM_DEFAULTS["position"]
+        ),
+        "scaleFactor": bounded_number(payload.get("scale"), 1.0, 0.75, 1.5),
+        "motionEnabled": (
+            payload["motion"] if isinstance(payload.get("motion"), bool) else True
+        ),
+        "glowIntensity": bounded_number(payload.get("glow"), 0.6, 0.0, 1.0),
+    }
+    return json.dumps(normalized, separators=(",", ":"), sort_keys=True)
+
+
 def watch(mode: str, path: Path, interval_ms: int) -> int:
     reader = {
         "config": config_status,
         "palette": palette_status,
+        "prism-settings": prism_settings_status,
         "state": runtime_status,
     }[mode]
     previous: str | None = None
@@ -142,7 +225,12 @@ def watch(mode: str, path: Path, interval_ms: int) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) != 4 or sys.argv[1] not in {"config", "palette", "state"}:
+    if len(sys.argv) != 4 or sys.argv[1] not in {
+        "config",
+        "palette",
+        "prism-settings",
+        "state",
+    }:
         return 2
     try:
         interval_ms = int(sys.argv[3])

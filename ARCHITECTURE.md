@@ -1,8 +1,9 @@
 # Architecture
 
-Voxtype Prism is an Omarchy `service` plugin. It runs inside the existing
-`omarchy-shell` process and never launches a second Quickshell instance. This
-release ships Signal as its first visual style.
+Voxtype Prism is an Omarchy `service` + on-demand `panel` plugin. Both run
+inside the existing `omarchy-shell` process; Prism never launches a second
+Quickshell instance. The service owns runtime presentation and activation. The
+panel is a normal `FloatingWindow` that owns no configuration logic.
 
 ```text
 omarchy-shell
@@ -13,16 +14,33 @@ omarchy-shell
       ├─ AudioBridge.qml     reads live peak/RMS frames
       ├─ OmarchyPalette.qml  follows the current theme
       ├─ PrismActivation.qml owns explicit first-run activation
-      └─ SignalSurface.qml   owns the click-through PanelWindow
+      ├─ IndicatorRuntimeConfig.qml reads normalized Prism preferences
+      ├─ IndicatorController.qml owns state/timing/audio history
+      ├─ IndicatorVisual.qml renders Signal|Halo|Bar Pulse
+      ├─ SignalSurface.qml   owns the click-through PanelWindow
+      └─ LauncherManager.qml installs the guarded Quick Shell entry
+
+omarchy-shell (only while summoned)
+  └─ SettingsPanel.qml / FloatingWindow
+      ├─ SettingsBackend.qml sends bounded JSON over Process stdin
+      ├─ PrismTextArea.qml owns native multiline editing
+      └─ IndicatorVisual.qml supplies the exact live preview renderer
 
 voxtype.service
   ├─ writes $XDG_RUNTIME_DIR/voxtype/state
   └─ serves $XDG_RUNTIME_DIR/voxtype/audio.sock
 
 scripts/voxtype-prism-read
-  ├─ opens config/runtime/palette sources with O_NOFOLLOW
+  ├─ opens config/runtime/palette/indicator sources with O_NOFOLLOW
   ├─ accepts only regular files below mode-specific byte ceilings
   └─ emits small normalized status tokens, never source content
+
+scripts/voxtype-prism-settings
+  ├─ snapshot → normalized, credential-free JSON + opaque revision
+  ├─ apply ← expected revision + partial patch on stdin
+  ├─ test-refine ← explicit sample + unsaved candidate on stdin
+  ├─ owns safe prompt/dictionary/provider/indicator persistence
+  └─ owns narrow, reversible Voxtype post-process integration
 
 scripts/voxtype-refine
   ├─ Voxtype post-process child (stdin → stdout)
@@ -30,8 +48,6 @@ scripts/voxtype-refine
   ├─ reads ~/.config/voxtype/refine-prompt.md
   ├─ appends ~/.config/voxtype/refine-dictionary.md to the system prompt
   └─ uses OhMyPi ~/.omp/agent/agent.db; never enters QML
-
-
 ```
 
 ## Why the built-in Voxtype OSD is disabled
@@ -41,25 +57,30 @@ built-in OSD child is enabled. Only spawning that child is gated by
 `[osd] enabled`. Prism therefore sets the built-in OSD to disabled through an
 explicit, reversible helper while retaining the same live audio feed.
 
-The plugin itself never writes Voxtype configuration. `VoxtypeConfig.qml`
-receives only a normalized status token from the bounded reader and fails
-closed: when the stock OSD is enabled or the config is missing, unsafe, or
-oversized, Prism renders nothing and does not start its audio-bridge child.
+The long-lived QML service never writes Voxtype configuration.
+`VoxtypeConfig.qml` receives only a normalized status token from the bounded
+reader and fails closed: when the stock OSD is enabled or the config is missing,
+unsafe, or oversized, Prism renders nothing and does not start its audio-bridge
+child. Writes occur only after an explicit activation or workbench save through
+the Python helpers.
 
 ## Lifecycle
 
-Omarchy loads `Service.qml` once when the plugin is enabled. Disabling or
-removing the plugin destroys the service, its PanelWindow, and the audio bridge.
+Omarchy loads `Service.qml` once when the plugin is enabled and loads
+`SettingsPanel.qml` only while the panel is summoned. Disabling or removing the
+plugin destroys the service, indicator PanelWindow, settings FloatingWindow,
+and audio bridge.
 Voxtype retains responsibility for speech capture, transcription, hotkeys, and
-output. Prism is presentation-only in this release. Optional LLM refine is a
-Voxtype post-process hook (`scripts/voxtype-refine`), not a Quickshell child.
+output. QML remains presentation-only; optional LLM refinement executes as a
+Voxtype post-process child (`scripts/voxtype-refine`), not as a Quickshell
+network path.
 
 When the stock OSD is still enabled, Prism displays an interactive activation
 card instead of Signal. Only its explicit **Activate** action runs the audited
 setup helper. Normal plugin reloads leave configuration untouched. Removal uses
 the same explicit, config-bound restore helper documented in the README.
 
-The helper under `scripts/` is user-invoked. It keeps a small state record under
+The activation helper keeps a small state record under
 `$XDG_STATE_HOME/voxtype-prism/` and uses an atomic replacement to change
 only the scoped `[osd] enabled` key. Restore uses the recorded original value,
 not a whole-file rollback, so later user changes survive.
@@ -76,6 +97,23 @@ The helper also recognizes the pre-release `voxtype-signal-osd` state path so
 existing local setup state can be migrated without losing the original OSD
 setting.
 
+The settings backend computes a composite hash across every managed input.
+Mutations require that opaque revision, validate the full partial patch before
+writing, and persist a private write-ahead journal before the first replacement.
+An interrupted prepared transaction restores candidate-valued files only when
+readback proves ownership; a committed journal is finalized without rolling the
+save back. Unknown or concurrently changed values stop recovery rather than
+being overwritten. A service restart failure is reported as committed rather
+than pretending disk state was rolled back. Foreign post-process commands are
+never overwritten. The earlier exact Prism trampoline is recognized through a
+bounded AST check and migrated on explicit save.
+
+Provider readiness is a redacted label. The OhMyPi database must be a bounded,
+stable, non-symlink regular file; only one size-capped provider row is parsed.
+Credential contents and HTTP authorization never cross the settings interface.
+`test-refine` is the only settings action allowed to contact a provider; normal
+snapshots and saves are local operations.
+
 ## Failure boundaries
 
 - Missing Voxtype config: plugin remains dormant.
@@ -83,10 +121,20 @@ setting.
   content into `omarchy-shell`.
 - Unsafe, oversized, or invalid runtime state: state normalizes to `idle`.
 - Unsafe or oversized palette: the last safe/default palette remains active.
+- Unsafe, oversized, or unknown indicator preferences: Signal defaults are
+  used without loading the document into QML.
 - Built-in OSD still enabled: plugin remains dormant, avoiding duplicates.
 - First-run activation failure: the card remains visible with a bounded error;
   the stock Voxtype indicator stays active.
 - Missing audio bridge or socket: the child retries without blocking the shell.
+- Concurrent settings edit: save fails with a fresh conflict instead of
+  overwriting the other writer.
+- Foreign post-process hook: refinement enablement is refused and the command
+  remains unchanged.
+- Provider or test failure: the explicit test reports a redacted error; normal
+  Voxtype post-processing retains upstream raw-transcript fallback behavior.
+- Launcher conflict: a foreign user desktop entry is preserved and Voxtype's
+  packaged launcher remains available.
 - QML load failure: Omarchy rejects or unloads the service through its plugin
   loader; Voxtype continues operating.
 - Plugin removal without restore: Voxtype still works, but has no visualizer

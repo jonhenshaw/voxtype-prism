@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "id": "io.github.jonhenshaw.voxtype-prism",
   "name": "Voxtype Prism",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Jon Henshaw",
   "license": "MIT",
-  "description": "A theme-aware enhancement layer for Voxtype, beginning with the Signal recording indicator.",
-  "kinds": ["service"],
-  "keepLoaded": true,
+  "description": "A native refinement workbench and curated recording-indicator studio for Voxtype.",
+  "kinds": ["service", "panel"],
   "entryPoints": {
-    "service": "Service.qml"
+    "service": "Service.qml",
+    "panel": "SettingsPanel.qml"
   }
 }
