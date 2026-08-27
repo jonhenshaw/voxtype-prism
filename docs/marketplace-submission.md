@@ -27,7 +27,7 @@ _No response_
 
 ### Maintainer notes
 
-Voxtype Prism is an Omarchy-native enhancement layer for the Voxtype dictation daemon. Its first release ships Signal, a compact theme-aware recording indicator. It has no network access, credentials, analytics, or privileged commands. QML receives only normalized tokens from a bounded, no-follow regular-file reader. An explicit reversible helper backs up the Voxtype config and changes only `[osd] enabled`; its setup state uses size-limited, symlink-safe, atomic, config-bound file operations, while compare-and-retry config updates preserve concurrent unrelated settings before restoring the recorded original value on removal.
+Voxtype Prism is an Omarchy-native enhancement layer for the Voxtype dictation daemon. It ships Signal, a compact theme-aware recording indicator. Standard installation displays an in-shell activation card, and only the user's explicit click changes `[osd] enabled`; no second terminal setup command is required. Removal instructions explicitly restore the recorded value before deletion. QML receives only normalized values from a bounded, no-follow regular-file reader. Setup state uses size-limited, symlink-safe, atomic, config-bound operations, while compare-and-retry config updates preserve concurrent unrelated settings.
 
 ### Submission checklist
 

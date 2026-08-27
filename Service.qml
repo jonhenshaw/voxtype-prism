@@ -46,7 +46,10 @@ Item {
                 surfaceWanted: signal.surfaceWanted,
                 presence: signal.presence,
                 audioRunning: audioBridge.running,
-                sampleLevels: signal.sampleLevels
+                sampleLevels: signal.sampleLevels,
+                activationNeeded: activation.needed,
+                activationBusy: activation.busy,
+                activationError: activation.errorText
             });
         }
     }
@@ -59,9 +62,11 @@ Item {
         targetScreen: root.activeScreen
     }
 
-    Component.onCompleted: {
-        if (!voxtypeConfig.configured) {
-            console.warn("voxtype-prism: setup required; run scripts/voxtype-prism-config setup");
-        }
+    PrismActivation {
+        id: activation
+        needed: voxtypeConfig.available && voxtypeConfig.stockOsdEnabled
+        targetScreen: root.activeScreen
+        themePalette: palette
     }
+
 }

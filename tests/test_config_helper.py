@@ -232,6 +232,5 @@ class ConfigEditingTests(unittest.TestCase):
             self.assertNotIn("original = 1", final)
             self.assertIn("enabled = false", final)
 
-
 if __name__ == "__main__":
     unittest.main()

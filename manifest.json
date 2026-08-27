@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.jonhenshaw.voxtype-prism",
   "name": "Voxtype Prism",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "author": "Jon Henshaw",
   "license": "MIT",
   "description": "A theme-aware enhancement layer for Voxtype, beginning with the Signal recording indicator.",

@@ -12,6 +12,7 @@ omarchy-shell
       ├─ BoundedValueReader.qml consumes normalized helper status tokens
       ├─ AudioBridge.qml     reads live peak/RMS frames
       ├─ OmarchyPalette.qml  follows the current theme
+      ├─ PrismActivation.qml owns explicit first-run activation
       └─ SignalSurface.qml   owns the click-through PanelWindow
 
 voxtype.service
@@ -43,6 +44,11 @@ removing the plugin destroys the service, its PanelWindow, and the audio bridge.
 Voxtype retains responsibility for speech capture, transcription, hotkeys, and
 output. Prism is presentation-only in this release.
 
+When the stock OSD is still enabled, Prism displays an interactive activation
+card instead of Signal. Only its explicit **Activate** action runs the audited
+setup helper. Normal plugin reloads leave configuration untouched. Removal uses
+the same explicit, config-bound restore helper documented in the README.
+
 The helper under `scripts/` is user-invoked. It keeps a small state record under
 `$XDG_STATE_HOME/voxtype-prism/` and uses an atomic replacement to change
 only the scoped `[osd] enabled` key. Restore uses the recorded original value,
@@ -68,6 +74,8 @@ setting.
 - Unsafe, oversized, or invalid runtime state: state normalizes to `idle`.
 - Unsafe or oversized palette: the last safe/default palette remains active.
 - Built-in OSD still enabled: plugin remains dormant, avoiding duplicates.
+- First-run activation failure: the card remains visible with a bounded error;
+  the stock Voxtype indicator stays active.
 - Missing audio bridge or socket: the child retries without blocking the shell.
 - QML load failure: Omarchy rejects or unloads the service through its plugin
   loader; Voxtype continues operating.
