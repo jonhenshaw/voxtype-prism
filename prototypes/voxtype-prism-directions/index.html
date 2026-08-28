@@ -1,0 +1,582 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway visual review surface.
+  Question: Which of three structurally different Voxtype Prism settings directions should become production QML?
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0d0f15">
+    <title>Voxtype Prism — Visual Directions</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --background: #0d0f15;
+        --surface: #13161e;
+        --surface-raised: #191d27;
+        --border: #2a303d;
+        --border-strong: #3a4353;
+        --foreground: #f2f4f8;
+        --muted: #9aa3b3;
+        --accent: #ff648d;
+        --accent-soft: rgba(255, 100, 141, 0.13);
+        --success: #7bd88f;
+        --radius: 12px;
+        font-family: "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        min-height: 100vh;
+        background: var(--background);
+        color: var(--foreground);
+      }
+
+      button, a { font: inherit; }
+
+      button:focus-visible, a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+
+      .shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      header {
+        min-height: 68px;
+        padding: 14px clamp(18px, 3vw, 42px);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        background: rgba(13, 15, 21, 0.96);
+      }
+
+      .brand h1 {
+        margin: 0 0 4px;
+        color: var(--accent);
+        font-size: clamp(17px, 2vw, 22px);
+        font-weight: 650;
+        letter-spacing: 0.01em;
+      }
+
+      .brand p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .private-badge {
+        border: 1px solid rgba(123, 216, 143, 0.45);
+        border-radius: 999px;
+        padding: 7px 10px;
+        color: var(--success);
+        background: rgba(123, 216, 143, 0.07);
+        font-size: 11px;
+        white-space: nowrap;
+        text-decoration: none;
+      }
+
+      main {
+        width: min(1800px, 100%);
+        margin: 0 auto;
+        padding: clamp(18px, 3vw, 38px);
+        display: grid;
+        grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
+        gap: clamp(18px, 2.5vw, 34px);
+      }
+
+      aside {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .intro {
+        padding: 2px 2px 8px;
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        color: var(--accent);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .intro h2 {
+        margin: 0 0 10px;
+        font-size: 21px;
+        line-height: 1.25;
+      }
+
+      .intro p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .option-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .option {
+        width: 100%;
+        padding: 14px;
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        gap: 12px;
+        text-align: left;
+        color: var(--foreground);
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+      }
+
+      .option:hover {
+        border-color: var(--border-strong);
+        background: var(--surface);
+      }
+
+      .option[aria-selected="true"] {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        transform: translateX(3px);
+      }
+
+      .option-number {
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .option[aria-selected="true"] .option-number {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .option-copy strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+
+      .option-copy span {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+
+      .keyboard-note {
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.6;
+      }
+
+      .selection-actions {
+        margin-top: auto;
+        display: grid;
+        gap: 8px;
+      }
+
+      .primary, .secondary {
+        min-height: 42px;
+        border-radius: 9px;
+        cursor: pointer;
+      }
+
+      .primary {
+        border: 1px solid var(--accent);
+        color: #17080d;
+        background: var(--accent);
+        font-weight: 700;
+      }
+
+      .secondary {
+        border: 1px solid var(--border-strong);
+        color: var(--foreground);
+        background: var(--surface);
+      }
+
+      .status {
+        min-height: 18px;
+        color: var(--success);
+        font-size: 11px;
+      }
+
+      .viewer {
+        min-width: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 12px;
+      }
+
+      .viewer-title {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      .viewer-title h2 {
+        margin: 0 0 4px;
+        font-size: clamp(18px, 2vw, 24px);
+      }
+
+      .viewer-title p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .full-size-link {
+        color: var(--muted);
+        font-size: 11px;
+        text-decoration: none;
+        border-bottom: 1px solid var(--border-strong);
+        padding-bottom: 2px;
+        white-space: nowrap;
+      }
+
+      .full-size-link:hover { color: var(--foreground); }
+
+      figure {
+        margin: 0;
+        min-height: 0;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: #080a0f;
+        cursor: zoom-in;
+      }
+
+      figure img {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: calc(100vh - 190px);
+        object-fit: contain;
+      }
+
+      .viewer-controls {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .viewer-controls .secondary:first-child { justify-self: start; padding: 0 16px; }
+      .viewer-controls .secondary:last-child { justify-self: end; padding: 0 16px; }
+
+      .position {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .lightbox {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        padding: 2vw;
+        display: grid;
+        place-items: center;
+        background: rgba(0, 0, 0, 0.86);
+      }
+
+      .lightbox[hidden] { display: none; }
+
+      .lightbox-frame {
+        width: min(96vw, 1800px);
+        max-height: 96vh;
+        overflow: hidden;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius);
+        background: #080a0f;
+        color: var(--foreground);
+      }
+
+      .dialog-bar {
+        padding: 10px 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 12px;
+      }
+
+      .dialog-close {
+        border: 1px solid var(--border-strong);
+        border-radius: 7px;
+        padding: 7px 10px;
+        color: var(--foreground);
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .lightbox img {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: calc(100vh - 80px);
+        object-fit: contain;
+      }
+
+      @media (max-width: 900px) {
+        main { grid-template-columns: 1fr; }
+        .option-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .option { grid-template-columns: 1fr; }
+        .option-number { display: none; }
+        .selection-actions { grid-template-columns: 1fr 1fr; }
+        .status { grid-column: 1 / -1; }
+        figure img { max-height: none; }
+      }
+
+      @media (max-width: 620px) {
+        header { align-items: flex-start; }
+        .brand p, .keyboard-note, .option-copy span { display: none; }
+        .option { padding: 11px; }
+        .option-copy strong { margin: 0; font-size: 11px; }
+        .viewer-title { align-items: flex-start; }
+        .viewer-controls { grid-template-columns: 1fr 1fr; }
+        .position { display: none; }
+        .viewer-controls .secondary { width: 100%; justify-self: stretch !important; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="brand">
+          <h1>Voxtype Prism</h1>
+          <p>Visual direction review</p>
+        </div>
+        <a class="private-badge" href="implementation.html">Option 1 built · view the live UI</a>
+      </header>
+
+      <main>
+        <aside>
+          <div class="intro">
+            <p class="eyebrow">Choose a direction</p>
+            <h2>Three ways Prism could feel</h2>
+            <p>These are structural concepts, not color variants. Pick one, or tell me which pieces to combine.</p>
+          </div>
+
+          <div class="option-list" role="tablist" aria-label="Visual directions">
+            <button class="option" type="button" role="tab" data-option="1" aria-selected="true">
+              <span class="option-number">1</span>
+              <span class="option-copy">
+                <strong>Refinement Workbench</strong>
+                <span>Provider controls and raw-versus-refined testing lead the product.</span>
+              </span>
+            </button>
+            <button class="option" type="button" role="tab" data-option="2" aria-selected="false">
+              <span class="option-number">2</span>
+              <span class="option-copy">
+                <strong>Prism Canvas</strong>
+                <span>A live indicator gallery and focused visual inspector take center stage.</span>
+              </span>
+            </button>
+            <button class="option" type="button" role="tab" data-option="3" aria-selected="false">
+              <span class="option-number">3</span>
+              <span class="option-copy">
+                <strong>Prompt Atelier</strong>
+                <span>A calm prompt editor with immediate test feedback feels like a native creative tool.</span>
+              </span>
+            </button>
+          </div>
+
+          <p class="keyboard-note">Use 1–3 or the left and right arrow keys to switch. Click the image for a full-size view.</p>
+
+          <div class="selection-actions">
+            <button id="copy-choice" class="primary" type="button">Copy my choice</button>
+            <button id="copy-link" class="secondary" type="button">Copy this link</button>
+            <div id="status" class="status" role="status" aria-live="polite"></div>
+          </div>
+        </aside>
+
+        <section class="viewer" aria-live="polite">
+          <div class="viewer-title">
+            <div>
+              <h2 id="direction-title">Refinement Workbench</h2>
+              <p id="direction-summary">Refinement is the hero workflow.</p>
+            </div>
+            <a id="full-size-link" class="full-size-link" href="assets/option-1-refinement-workbench.png" target="_blank" rel="noopener">Open original image</a>
+          </div>
+
+          <figure id="image-stage" role="button" tabindex="0" aria-label="Open full-size concept">
+            <img id="concept-image" src="assets/option-1-refinement-workbench.png" alt="Option 1, Refinement Workbench concept">
+          </figure>
+
+          <div class="viewer-controls">
+            <button id="previous" class="secondary" type="button">Previous</button>
+            <span id="position" class="position">1 of 3</span>
+            <button id="next" class="secondary" type="button">Next</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="image-dialog" class="lightbox" role="dialog" aria-modal="true" aria-labelledby="dialog-title" hidden>
+      <div class="lightbox-frame">
+        <div class="dialog-bar">
+          <span id="dialog-title">Refinement Workbench</span>
+          <button id="dialog-close" class="dialog-close" type="button">Close</button>
+        </div>
+        <img id="dialog-image" src="assets/option-1-refinement-workbench.png" alt="Full-size concept">
+      </div>
+    </div>
+
+    <script>
+      const directions = {
+        1: {
+          title: "Refinement Workbench",
+          summary: "Refinement is the hero workflow.",
+          image: "assets/option-1-refinement-workbench.png"
+        },
+        2: {
+          title: "Prism Canvas",
+          summary: "Indicator design and live preview lead.",
+          image: "assets/option-2-prism-canvas.png"
+        },
+        3: {
+          title: "Prompt Atelier",
+          summary: "Prompt craftsmanship feels focused and immediate.",
+          image: "assets/option-3-prompt-atelier.png"
+        }
+      };
+
+      const options = [...document.querySelectorAll("[data-option]")];
+      const title = document.querySelector("#direction-title");
+      const summary = document.querySelector("#direction-summary");
+      const conceptImage = document.querySelector("#concept-image");
+      const fullSizeLink = document.querySelector("#full-size-link");
+      const position = document.querySelector("#position");
+      const status = document.querySelector("#status");
+      const dialog = document.querySelector("#image-dialog");
+      const dialogTitle = document.querySelector("#dialog-title");
+      const dialogImage = document.querySelector("#dialog-image");
+      let current = 1;
+
+      function optionFromUrl() {
+        const requested = Number(new URLSearchParams(location.search).get("option"));
+        return directions[requested] ? requested : 1;
+      }
+
+      function selectOption(next, updateUrl = true) {
+        if (!directions[next]) return;
+        current = next;
+        const direction = directions[current];
+        options.forEach(button => {
+          const selected = Number(button.dataset.option) === current;
+          button.setAttribute("aria-selected", String(selected));
+          button.tabIndex = selected ? 0 : -1;
+        });
+        title.textContent = direction.title;
+        summary.textContent = direction.summary;
+        conceptImage.src = direction.image;
+        conceptImage.alt = `Option ${current}, ${direction.title} concept`;
+        fullSizeLink.href = direction.image;
+        position.textContent = `${current} of 3`;
+        dialogTitle.textContent = direction.title;
+        dialogImage.src = direction.image;
+        dialogImage.alt = `Full-size option ${current}, ${direction.title} concept`;
+        status.textContent = "";
+        if (updateUrl) {
+          const url = new URL(location.href);
+          url.searchParams.set("option", String(current));
+          history.replaceState({}, "", url);
+        }
+      }
+
+      function cycle(delta) {
+        const next = ((current - 1 + delta + 3) % 3) + 1;
+        selectOption(next);
+      }
+
+      function openDialog() {
+        dialog.hidden = false;
+        document.body.style.overflow = "hidden";
+        document.querySelector("#dialog-close").focus();
+      }
+
+      function closeDialog() {
+        dialog.hidden = true;
+        document.body.style.overflow = "";
+        document.querySelector("#image-stage").focus?.();
+      }
+
+      async function copyText(value, successMessage) {
+        try {
+          await navigator.clipboard.writeText(value);
+          status.textContent = successMessage;
+        } catch {
+          status.textContent = "Copy was blocked; select the browser address or choice manually.";
+        }
+      }
+
+      options.forEach(button => {
+        button.addEventListener("click", () => selectOption(Number(button.dataset.option)));
+      });
+
+      document.querySelector("#previous").addEventListener("click", () => cycle(-1));
+      document.querySelector("#next").addEventListener("click", () => cycle(1));
+      document.querySelector("#copy-choice").addEventListener("click", () => {
+        copyText(`I choose option ${current}: ${directions[current].title}.`, `Copied option ${current}.`);
+      });
+      document.querySelector("#copy-link").addEventListener("click", () => {
+        copyText(location.href, "Copied this option's link.");
+      });
+
+      document.querySelector("#image-stage").addEventListener("click", openDialog);
+      document.querySelector("#image-stage").addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openDialog();
+        }
+      });
+      document.querySelector("#dialog-close").addEventListener("click", closeDialog);
+      dialog.addEventListener("click", event => {
+        if (event.target === dialog) closeDialog();
+      });
+
+      document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !dialog.hidden) {
+          closeDialog();
+          return;
+        }
+        if (event.target.closest("button, a, input, textarea, [contenteditable]")) return;
+        if (event.key === "ArrowLeft") cycle(-1);
+        if (event.key === "ArrowRight") cycle(1);
+        if (/^[1-3]$/.test(event.key)) selectOption(Number(event.key));
+      });
+
+      addEventListener("popstate", () => selectOption(optionFromUrl(), false));
+      selectOption(optionFromUrl(), false);
+    </script>
+  </body>
+</html>

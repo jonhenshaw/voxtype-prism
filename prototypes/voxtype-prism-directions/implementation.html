@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b0d13">
+    <title>Voxtype Prism — Refinement Workbench</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --canvas: #0b0d13;
+        --panel: #151824;
+        --panel-strong: #1c2030;
+        --line: #30364c;
+        --text: #eef0ff;
+        --muted: #949ab4;
+        --accent: #80a8ff;
+        --signal: #ff6f91;
+        font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 70% 0%, rgba(74, 98, 160, 0.16), transparent 36rem),
+          var(--canvas);
+        color: var(--text);
+      }
+
+      main {
+        width: min(1440px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 44px 0 64px;
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--accent);
+        font-size: 12px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 900px;
+        font-size: clamp(30px, 5vw, 60px);
+        line-height: 1.04;
+        letter-spacing: -0.04em;
+      }
+
+      .lede {
+        max-width: 850px;
+        margin: 20px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.75;
+      }
+
+      .status-row,
+      .tabs,
+      .preset-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 9px;
+      }
+
+      .status-row { margin: 24px 0 34px; }
+
+      .status {
+        border: 1px solid var(--line);
+        background: rgba(21, 24, 36, 0.82);
+        padding: 8px 11px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .status strong { color: var(--text); font-weight: 600; }
+
+      .viewer {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: #000;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+      }
+
+      .viewer-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        min-height: 62px;
+        padding: 12px 14px 12px 18px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .viewer-label {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      button,
+      a.button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        padding: 9px 12px;
+        font: inherit;
+        font-size: 12px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      button:hover,
+      button:focus-visible,
+      a.button:hover,
+      a.button:focus-visible {
+        border-color: var(--accent);
+        color: var(--text);
+        outline: none;
+      }
+
+      button[aria-pressed="true"] {
+        border-color: var(--accent);
+        background: rgba(128, 168, 255, 0.14);
+        color: var(--text);
+      }
+
+      .shot {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1120 / 760;
+        object-fit: contain;
+        background: #000;
+      }
+
+      .below {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(290px, 0.65fr);
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        background: rgba(21, 24, 36, 0.78);
+        padding: 22px;
+      }
+
+      .card h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+      }
+
+      .card p,
+      .card li {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+
+      .card ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .preset-tabs { margin-top: 16px; }
+
+      .signal { color: var(--signal); }
+
+      footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-top: 24px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      @media (max-width: 850px) {
+        main { width: min(100% - 20px, 720px); padding-top: 26px; }
+        .below { grid-template-columns: 1fr; }
+        .viewer-bar { align-items: flex-start; flex-direction: column; }
+        .shot { aspect-ratio: auto; }
+        footer { align-items: flex-start; flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Built and deployed · Option 1</p>
+      <h1>Refinement Workbench is now the real Voxtype configuration surface.</h1>
+      <p class="lede">
+        These are production QML captures using the installed Omarchy design system and
+        your redacted live settings. Switch tabs to inspect the entire workbench. The
+        successful transcript is presentation-only test data; no provider request was made.
+      </p>
+
+      <div class="status-row" aria-label="Deployment status">
+        <span class="status"><strong>Installed</strong> io.github.jonhenshaw.voxtype-prism</span>
+        <span class="status"><strong>Launcher</strong> Voxtype Configuration replaced</span>
+        <span class="status"><strong>Window</strong> floating · 1120 × 760</span>
+        <span class="status"><strong>Tests</strong> 115 passing</span>
+        <span class="status"><strong>Network</strong> tailnet only</span>
+      </div>
+
+      <section class="viewer" aria-labelledby="viewer-title">
+        <div class="viewer-bar">
+          <span class="viewer-label" id="viewer-title">Production QML · <span id="screen-name">Refinement</span></span>
+          <div class="tabs" role="group" aria-label="Workbench screen">
+            <button type="button" data-screen="refinement" aria-pressed="true">Refinement</button>
+            <button type="button" data-screen="prompt" aria-pressed="false">Prompt</button>
+            <button type="button" data-screen="dictionary" aria-pressed="false">Dictionary</button>
+            <button type="button" data-screen="indicator" aria-pressed="false">Indicator</button>
+          </div>
+        </div>
+        <img
+          class="shot"
+          id="workbench-shot"
+          src="assets/built-refinement.png"
+          alt="Production Voxtype Prism Refinement Workbench screen">
+      </section>
+
+      <div class="below">
+        <section class="card">
+          <h2>Indicator studio</h2>
+          <p>
+            The preview and on-screen runtime share the same renderer. Try the three
+            curated directions below; every control shown is functional.
+          </p>
+          <div class="preset-tabs" role="group" aria-label="Indicator preset">
+            <button type="button" data-preset="signal" aria-pressed="true">Signal</button>
+            <button type="button" data-preset="halo" aria-pressed="false">Halo</button>
+            <button type="button" data-preset="bar-pulse" aria-pressed="false">Bar Pulse</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>What is live</h2>
+          <ul>
+            <li>Grok, Anthropic, OpenAI Codex, and local refinement providers</li>
+            <li>Prompt and dictionary editors with byte limits</li>
+            <li>Conflict-safe, journaled multi-file saves</li>
+            <li>Dirty-close protection and stock Voxtype escape hatch</li>
+            <li>Quick Shell desktop launcher takeover with fallback</li>
+          </ul>
+        </section>
+      </div>
+
+      <footer>
+        <span><span class="signal">Voxtype Prism</span> · Refinement Workbench v1.2</span>
+        <a class="button" href="./">Return to the original three directions</a>
+      </footer>
+    </main>
+
+    <script>
+      const screens = {
+        refinement: {
+          name: "Refinement",
+          src: "assets/built-refinement.png",
+          alt: "Production Voxtype Prism Refinement Workbench screen"
+        },
+        prompt: {
+          name: "Prompt",
+          src: "assets/built-prompt.png",
+          alt: "Production Voxtype Prism custom prompt editor"
+        },
+        dictionary: {
+          name: "Dictionary",
+          src: "assets/built-dictionary.png",
+          alt: "Production Voxtype Prism custom dictionary editor"
+        },
+        indicator: {
+          name: "Indicator · Signal",
+          src: "assets/built-indicator-signal.png",
+          alt: "Production Voxtype Prism Signal indicator studio"
+        }
+      };
+
+      const image = document.querySelector("#workbench-shot");
+      const screenName = document.querySelector("#screen-name");
+      const screenButtons = Array.from(document.querySelectorAll("[data-screen]"));
+      const presetButtons = Array.from(document.querySelectorAll("[data-preset]"));
+
+      function show(entry) {
+        image.src = entry.src;
+        image.alt = entry.alt;
+        screenName.textContent = entry.name;
+      }
+
+      screenButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          screenButtons.forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
+          show(screens[button.dataset.screen]);
+        });
+      });
+
+      presetButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const preset = button.dataset.preset;
+          presetButtons.forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
+          screenButtons.forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate.dataset.screen === "indicator")));
+          const label = preset === "bar-pulse" ? "Bar Pulse" : preset[0].toUpperCase() + preset.slice(1);
+          show({
+            name: "Indicator · " + label,
+            src: "assets/built-indicator-" + preset + ".png",
+            alt: "Production Voxtype Prism " + label + " indicator studio"
+          });
+        });
+      });
+    </script>
+  </body>
+</html>
