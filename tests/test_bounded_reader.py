@@ -298,12 +298,17 @@ class BoundedReaderTests(unittest.TestCase):
             'sequence: "Alt+3"',
             'sequence: "Alt+4"',
             'sequence: "F1"',
+            'sequence: "?"',
             'sequence: "Escape"',
         ):
             with self.subTest(sequence=sequence):
                 shortcut = panel.index(sequence)
                 self.assertGreater(shortcut, focus_scope)
                 self.assertLess(shortcut, workbench)
+
+        self.assertIn("function activeFocusAcceptsTextInput()", panel)
+        self.assertIn("!root.activeFocusAcceptsTextInput()", panel)
+        self.assertIn('tooltipText: "Keyboard shortcuts (? or F1)"', panel)
 
 
 if __name__ == "__main__":

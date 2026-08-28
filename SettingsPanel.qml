@@ -350,6 +350,13 @@ Item {
         focusBeforeModal = owningWindow ? owningWindow.activeFocusItem : null
     }
 
+    function activeFocusAcceptsTextInput() {
+        return modelField.activeFocus
+            || rawEditor.activeEditorFocus
+            || promptEditor.activeEditorFocus
+            || dictionaryEditor.activeEditorFocus
+    }
+
     function restoreModalFocus() {
         const target = focusBeforeModal
         focusBeforeModal = null
@@ -370,6 +377,12 @@ Item {
         if (!shortcutsVisible) return
         shortcutsVisible = false
         restoreModalFocus()
+    }
+
+    function toggleShortcuts() {
+        if (discardDialogVisible) return
+        if (shortcutsVisible) hideShortcuts()
+        else showShortcuts()
     }
 
     function showDiscardDialog() {
@@ -499,11 +512,14 @@ Item {
             Shortcut {
                 sequence: "F1"
                 context: Qt.WindowShortcut
-                onActivated: {
-                    if (root.discardDialogVisible) return
-                    if (root.shortcutsVisible) root.hideShortcuts()
-                    else root.showShortcuts()
-                }
+                onActivated: root.toggleShortcuts()
+            }
+            Shortcut {
+                sequence: "?"
+                enabled: !root.discardDialogVisible
+                    && (root.shortcutsVisible || !root.activeFocusAcceptsTextInput())
+                context: Qt.WindowShortcut
+                onActivated: root.toggleShortcuts()
             }
             Shortcut {
                 sequence: "Escape"
@@ -594,7 +610,7 @@ Item {
                             focusable: true
                             iconText: "?"
                             text: "Shortcuts"
-                            tooltipText: "Keyboard shortcuts (F1)"
+                            tooltipText: "Keyboard shortcuts (? or F1)"
                             onClicked: root.showShortcuts()
                         }
 
@@ -1665,7 +1681,7 @@ Item {
                                 { keys: "Alt+1 … Alt+4", action: "Switch workbench tabs" },
                                 { keys: "Ctrl+Enter", action: "Test current refinement draft" },
                                 { keys: "Ctrl+S", action: "Save all changes" },
-                                { keys: "F1", action: "Show or hide this guide" },
+                                { keys: "? or F1", action: "Show or hide this guide" },
                                 { keys: "Esc", action: "Close dialogs or the workbench" }
                             ]
 
