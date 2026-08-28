@@ -6,6 +6,9 @@ import os
 import sqlite3
 import stat
 import sys
+import threading
+import urllib.error
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 import tempfile
@@ -548,6 +551,143 @@ class RefineHelperTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "byte limit"):
             MODULE.read_bounded_response(Response())
+
+    def test_provider_http_refuses_all_redirects_without_forwarding_secrets(self) -> None:
+        received: list[tuple[str | None, str | None, bytes]] = []
+
+        class RedirectTarget(BaseHTTPRequestHandler):
+            def capture(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                received.append(
+                    (
+                        self.headers.get("Authorization"),
+                        self.headers.get("ChatGPT-Account-Id"),
+                        self.rfile.read(length),
+                    )
+                )
+                body = b'{"ok": true}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self) -> None:  # noqa: N802 - stdlib callback name
+                self.capture()
+
+            def do_POST(self) -> None:  # noqa: N802 - stdlib callback name
+                self.capture()
+
+            def log_message(self, _format: str, *_args) -> None:
+                return
+
+        target = ThreadingHTTPServer(("127.0.0.1", 0), RedirectTarget)
+
+        class Redirector(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - stdlib callback name
+                self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                self.send_response(self.server.redirect_status)
+                self.send_header(
+                    "Location",
+                    f"http://127.0.0.1:{target.server_port}/capture",
+                )
+                self.end_headers()
+
+            def log_message(self, _format: str, *_args) -> None:
+                return
+
+        redirector = ThreadingHTTPServer(("127.0.0.1", 0), Redirector)
+        target_thread = threading.Thread(target=target.serve_forever, daemon=True)
+        redirect_thread = threading.Thread(target=redirector.serve_forever, daemon=True)
+        target_thread.start()
+        redirect_thread.start()
+        try:
+            headers = {
+                "Authorization": "Bearer synthetic-secret",
+                "ChatGPT-Account-Id": "synthetic-account",
+                "Content-Type": "application/json",
+            }
+            for transport in (MODULE.http_json, MODULE.http_bytes):
+                for status in (301, 302, 303, 307, 308):
+                    with self.subTest(transport=transport.__name__, status=status):
+                        received.clear()
+                        redirector.redirect_status = status
+                        with self.assertRaises(urllib.error.HTTPError) as caught:
+                            transport(
+                                f"http://127.0.0.1:{redirector.server_port}/provider",
+                                headers,
+                                {"transcript": "synthetic private text"},
+                                2,
+                            )
+                        self.assertEqual(caught.exception.code, status)
+                        self.assertEqual(received, [])
+        finally:
+            redirector.shutdown()
+            target.shutdown()
+            redirector.server_close()
+            target.server_close()
+            redirect_thread.join(timeout=2)
+            target_thread.join(timeout=2)
+
+    def test_provider_http_preserves_direct_success(self) -> None:
+        received: list[tuple[str | None, dict[str, object]]] = []
+
+        class DirectProvider(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802 - stdlib callback name
+                length = int(self.headers["Content-Length"])
+                received.append(
+                    (
+                        self.headers.get("Authorization"),
+                        json.loads(self.rfile.read(length)),
+                    )
+                )
+                body = b'{"ok": true}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format: str, *_args) -> None:
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), DirectProvider)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}/provider"
+            headers = {
+                "Authorization": "Bearer synthetic-secret",
+                "Content-Type": "application/json",
+            }
+            payload = {"transcript": "synthetic private text"}
+            self.assertEqual(MODULE.http_json(url, headers, payload, 2), {"ok": True})
+            self.assertEqual(MODULE.http_bytes(url, headers, payload, 2), b'{"ok": true}')
+            self.assertEqual(
+                received,
+                [
+                    ("Bearer synthetic-secret", payload),
+                    ("Bearer synthetic-secret", payload),
+                ],
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_refresh_redirect_failure_preserves_existing_access_token(self) -> None:
+        redirect = urllib.error.HTTPError(
+            "https://auth.x.ai/oauth2/token",
+            302,
+            "provider redirect refused",
+            {},
+            None,
+        )
+        with patch.object(MODULE, "open_provider_request", side_effect=redirect) as opener:
+            token = MODULE.refresh_oauth(
+                "xai-oauth",
+                {"access": "existing-access", "refresh": "refresh-secret", "expires": 0},
+            )
+        self.assertEqual(token, "existing-access")
+        opener.assert_called_once()
 
     def test_oauth_rejects_symlinked_credential_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

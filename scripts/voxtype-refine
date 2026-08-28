@@ -957,6 +957,37 @@ def oauth_available(provider_id: str) -> bool:
     return load_oauth(provider_id, missing_ok=True) is not None
 
 
+class RefuseProviderRedirects(urllib.request.HTTPRedirectHandler):
+    """Fail closed before urllib can copy secrets to a redirect target."""
+
+    def redirect_request(
+        self,
+        request: urllib.request.Request,
+        response: Any,
+        code: int,
+        message: str,
+        headers: Any,
+        redirected_url: str,
+    ) -> None:
+        del redirected_url
+        try:
+            response.close()
+        finally:
+            raise urllib.error.HTTPError(
+                request.full_url,
+                code,
+                f"provider redirect refused: {message}",
+                headers,
+                None,
+            )
+
+
+def open_provider_request(request: urllib.request.Request, timeout: float) -> Any:
+    """Open one provider request without process-global redirect handling."""
+    opener = urllib.request.build_opener(RefuseProviderRedirects())
+    return opener.open(request, timeout=timeout)
+
+
 def refresh_oauth(omp_provider: str, cred: dict[str, Any]) -> str:
     access = str(cred.get("access") or "")
     refresh = str(cred.get("refresh") or "")
@@ -1001,7 +1032,7 @@ def refresh_oauth(omp_provider: str, cred: dict[str, Any]) -> str:
 
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with open_provider_request(req, timeout=15) as resp:
             payload = json.loads(read_bounded_response(resp).decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, OSError, RuntimeError):
         return access
@@ -1042,7 +1073,7 @@ def http_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeou
         headers=headers,
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with open_provider_request(req, timeout=timeout) as resp:
         decoded = json.loads(read_bounded_response(resp).decode("utf-8"))
     if not isinstance(decoded, dict):
         raise RuntimeError("refine provider returned an invalid JSON response")
@@ -1056,7 +1087,7 @@ def http_bytes(url: str, headers: dict[str, str], payload: dict[str, Any], timeo
         headers=headers,
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with open_provider_request(req, timeout=timeout) as resp:
         return read_bounded_response(resp)
 
 
