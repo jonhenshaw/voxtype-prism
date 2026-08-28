@@ -45,7 +45,7 @@ scripts/voxtype-prism-settings
 scripts/voxtype-refine
   ├─ Voxtype post-process child (stdin → stdout)
   ├─ reads ~/.config/voxtype/refine.toml for grok|anthropic|openai|local
-  ├─ combines an immutable transcript-only contract with editable preferences
+  ├─ reads the complete user-owned system prompt without hidden instructions
   ├─ JSON-encodes transcript, prior context, and dictionary terms as data
   └─ uses OhMyPi ~/.omp/agent/agent.db; never enters QML
 ```

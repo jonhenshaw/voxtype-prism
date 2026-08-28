@@ -89,8 +89,7 @@ The workbench deliberately owns only Prism's enhancement layer:
 
 - **Refinement** — enable the Voxtype post-process hook, choose a provider,
   inspect readiness, and compare raw text with an explicitly requested test.
-- **Prompt** — tune editing preferences with a 32 KiB limit; Prism keeps the
-  transcript-only contract immutable.
+- **Prompt** — edit the complete system prompt with a 32 KiB limit.
 - **Dictionary** — keep preferred spellings and spoken-to-written mappings.
 - **Indicator** — preview and select Signal, Halo, or Bar Pulse; choose top or
   bottom placement, scale, motion, and glow.
@@ -155,9 +154,10 @@ the narrow `[output.post_process].command` integration. It recognizes the
 earlier `~/.config/voxtype/llm-refine.py` Prism trampoline for migration, but
 never overwrites an unknown post-process command.
 
-Editing preferences live in `~/.config/voxtype/refine-prompt.md`. Edit that file
-or run `scripts/voxtype-refine edit-prompt`. Run `scripts/voxtype-refine prompt`
-to inspect the complete system prompt, including Prism's immutable contract.
+The complete system prompt lives in `~/.config/voxtype/refine-prompt.md`. Prism
+does not prepend or append hidden instructions. Edit the file directly, use the
+workbench, or run `scripts/voxtype-refine edit-prompt`. Run
+`scripts/voxtype-refine prompt` to inspect exactly what the provider receives.
 
 The dictionary is `~/.config/voxtype/refine-dictionary.md`. Terms are encoded as
 lexical reference data, separate from instructions, and used only when the
@@ -205,9 +205,10 @@ values to QML.
 - `scripts/voxtype-refine` is the only network path. Remote providers receive
   the current transcript and, when Voxtype supplies it, recent dictation
   context. Transcript, context, and preferred spellings are JSON-encoded as
-  data; the system contract requires questions and requests to remain dictated
-  text rather than being answered. Provider responses and requests are bounded.
-  Saving ordinary settings never performs a network test.
+  data. The shipped default prompt requires questions and requests to remain
+  dictated text rather than being answered, but the user can edit the entire
+  prompt. Provider responses and requests are bounded. Saving ordinary settings
+  never performs a network test.
 - The separate Quick Shell desktop entry is installed only when its target is
   absent or already carries Prism's ownership marker. Concurrent or foreign
   entries are preserved. Migration removes only the earlier Prism-marked

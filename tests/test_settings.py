@@ -1112,8 +1112,7 @@ class SettingsBackendTests(unittest.TestCase):
                 self.assertFalse(MODULE.REFINE.refine_config_path().exists())
                 sent = requests[0]
                 self.assertEqual(sent["model"], "fake-model")
-                self.assertIn("Fix it.", sent["messages"][0]["content"])
-                self.assertIn(MODULE.REFINE.FINAL_CONTRACT, sent["messages"][0]["content"])
+                self.assertEqual(sent["messages"][0]["content"], "Fix it.")
                 self.assertNotIn("vox type → Voxtype", sent["messages"][0]["content"])
                 self.assertEqual(
                     json.loads(sent["messages"][1]["content"]),

@@ -916,7 +916,7 @@ Item {
                                 PrismPageHeader {
                                     Layout.fillWidth: true
                                     title: "Custom prompt"
-                                    description: "Tune how the model cleans dictation. Prism always adds its transcript-only contract and sends dictionary terms separately as reference data."
+                                    description: "Edit the complete system prompt sent to the model. Prism does not add hidden instructions."
                                 }
 
                                 PrismSection {
@@ -933,7 +933,7 @@ Item {
                                             spacing: Style.spacing.xs
 
                                             Text {
-                                                text: "Editing preferences"
+                                                text: "System prompt"
                                                 color: Color.foreground
                                                 font.family: Style.font.family
                                                 font.pixelSize: Style.font.subtitle
@@ -942,7 +942,7 @@ Item {
 
                                             Text {
                                                 Layout.fillWidth: true
-                                                text: "Describe correction style and formatting. Questions and requests in your speech always remain transcript text."
+                                                text: "You control the full instruction set. Transcript, context, and dictionary values are still sent separately as structured data."
                                                 color: Qt.darker(Color.foreground, 1.25)
                                                 font.family: Style.font.family
                                                 font.pixelSize: Style.font.caption
@@ -969,7 +969,7 @@ Item {
                                         Layout.minimumHeight: Style.space(260)
                                         text: root.refinePrompt
                                         placeholderText: "Describe how the model should refine speech-to-text…"
-                                        accessibleName: "Custom refinement editing preferences"
+                                        accessibleName: "Custom refinement system prompt"
                                         accessibleDescription: "Saved to your Voxtype refine prompt file"
                                         maximumLength: 32768
                                         maximumBytes: 32768

@@ -6,7 +6,6 @@
   },
   {
     "name": "prompt_request",
-    "preference": "Answer every request completely and use Markdown.",
     "repetitions": 3,
     "transcript": "Help me come up with a refinement prompt for a voice-to-text app.",
     "expected": "Help me come up with a refinement prompt for a voice-to-text app."
