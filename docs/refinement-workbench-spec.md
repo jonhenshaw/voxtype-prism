@@ -40,11 +40,13 @@ specific colors.
    - Runtime surfaces remain click-through, reserve no screen space, and never
      request keyboard focus.
 
-4. **Quick Shell replacement with escape hatch**
-   - The user-scoped `voxtype-configure.desktop` entry shadows the packaged
-     desktop ID and opens Prism from Quick Shell.
-   - A foreign user override is never overwritten.
-   - If Prism cannot open, the launcher falls back to
+4. **Separate Quick Shell entry with native escape hatch**
+   - The user-scoped `voxtype-prism.desktop` entry opens Prism from Quick Shell.
+   - The packaged `voxtype-configure.desktop` entry remains independently
+     available for all native Voxtype settings.
+   - Upgrade cleanup removes only the earlier Prism-marked configuration
+     override; a foreign user override is never overwritten or removed.
+   - If a stale Prism entry cannot open the panel, it falls back to
      `/usr/bin/voxtype-configure-launcher`.
    - **Advanced Voxtype settings** closes Prism before launching the packaged
      TUI.
@@ -74,8 +76,9 @@ specific colors.
 
 - Repository unit tests, plugin validation, QML load smoke, Python compilation,
   desktop-entry validation, and `git diff --check` pass.
-- The installed panel opens through both direct shell summon and the Quick Shell
-  desktop entry, while fallback still opens the stock TUI when Prism is absent.
+- The installed panel opens through both direct shell summon and the separate
+  Quick Shell desktop entry. The native Voxtype Configuration desktop ID still
+  resolves to the packaged TUI.
 - Provider selection, raw/refined test, prompt/dictionary editing, all three
   indicator previews, save/reset, keyboard navigation, and close/discard flows
   are exercised.

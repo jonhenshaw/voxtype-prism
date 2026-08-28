@@ -18,8 +18,8 @@ An Omarchy-native refinement and presentation studio for
 - Uses an empty input region and never steals keyboard focus.
 - Runs as Omarchy `service` and on-demand `panel` kinds inside the existing
   `omarchy-shell` process.
-- Replaces the Quick Shell **Voxtype Configuration** launcher at user scope,
-  with an automatic fallback to Voxtype's packaged TUI.
+- Adds a separate Quick Shell **Voxtype Prism** launcher while preserving the
+  native **Voxtype Configuration** app for upstream settings.
 - Never loads watched config, runtime-state, or palette files into QML; a
   bounded, no-follow helper emits only normalized status tokens to
   `omarchy-shell`.
@@ -56,11 +56,13 @@ The activation action:
 Signal stays dormant while the activation card is visible, so Prism never
 duplicates the built-in Voxtype indicator.
 
-The always-loaded service also installs a guarded user-level override for
-`voxtype-configure.desktop`. Searching Quick Shell for **Voxtype
-Configuration** then opens the Refinement Workbench. If Prism is unavailable,
-the same entry falls back to `/usr/bin/voxtype-configure-launcher`; package
-files under `/usr/share` are never modified.
+The always-loaded service installs a guarded user-level
+`voxtype-prism.desktop` entry. Searching Quick Shell for **Voxtype Prism** opens
+the Refinement Workbench. The packaged **Voxtype Configuration** entry remains
+available for engines, models, languages, hotkeys, audio, and output settings.
+On upgrade, Prism removes only its earlier marked `voxtype-configure.desktop`
+override; foreign user overrides and package files under `/usr/share` are never
+modified.
 
 If the activation card cannot be used, the same audited action remains
 available as a fallback:
@@ -77,7 +79,7 @@ Check setup state at any time:
 
 ## Refinement Workbench
 
-Open **Voxtype Configuration** from Quick Shell, or summon the panel directly:
+Open **Voxtype Prism** from Quick Shell, or summon the panel directly:
 
 ```bash
 omarchy-shell shell summon io.github.jonhenshaw.voxtype-prism '{}'
@@ -105,8 +107,8 @@ also restarts and verifies `voxtype.service`.
 
 First open the workbench, turn **Refinement** off, and save. This restores a
 recorded pre-Prism post-process command when one existed, or removes Prism's
-hook when it did not. Then restore the launcher and exact OSD-enabled state
-recorded during activation before removing Prism:
+hook when it did not. Then remove Prism's separate launcher and restore the
+exact OSD-enabled state recorded during activation before removing Prism:
 
 ```bash
 ~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism/scripts/voxtype-prism-launcher remove
@@ -190,9 +192,11 @@ values to QML.
   the current transcript and, when Voxtype supplies it, recent dictation
   context. Provider responses and requests are bounded. Saving ordinary
   settings never performs a network test.
-- The Quick Shell desktop override is installed only when the target is absent
-  or already carries Prism's ownership marker. Concurrent or foreign entries
-  are preserved, and the packaged Voxtype launcher remains the fallback.
+- The separate Quick Shell desktop entry is installed only when its target is
+  absent or already carries Prism's ownership marker. Concurrent or foreign
+  entries are preserved. Migration removes only the earlier Prism-marked
+  configuration override, leaving native Voxtype settings independently
+  discoverable.
 
 
 ## Development

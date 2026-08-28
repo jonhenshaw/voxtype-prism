@@ -18,7 +18,7 @@ omarchy-shell
       ├─ IndicatorController.qml owns state/timing/audio history
       ├─ IndicatorVisual.qml renders Signal|Halo|Bar Pulse
       ├─ SignalSurface.qml   owns the click-through PanelWindow
-      └─ LauncherManager.qml installs the guarded Quick Shell entry
+      └─ LauncherManager.qml installs the separate guarded Quick Shell entry
 
 omarchy-shell (only while summoned)
   └─ SettingsPanel.qml / FloatingWindow
@@ -134,8 +134,9 @@ snapshots and saves are local operations.
   remains unchanged.
 - Provider or test failure: the explicit test reports a redacted error; normal
   Voxtype post-processing retains upstream raw-transcript fallback behavior.
-- Launcher conflict: a foreign user desktop entry is preserved and Voxtype's
-  packaged launcher remains available.
+- Launcher conflict: a foreign `voxtype-prism.desktop` is preserved. Migration
+  removes only an older Prism-marked configuration override, so Voxtype's
+  packaged settings launcher remains independently available.
 - QML load failure: Omarchy rejects or unloads the service through its plugin
   loader; Voxtype continues operating.
 - Plugin removal without restore: Voxtype still works, but has no visualizer

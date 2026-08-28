@@ -1,10 +1,10 @@
 #!/usr/bin/python3
-"""Install and run Voxtype Prism's user-scoped settings launcher.
+"""Install and run Voxtype Prism's separate user-scoped launcher.
 
-The installed desktop entry shadows Voxtype's packaged configuration entry.
-It opens Prism when the plugin is installed and enabled, and falls back to the
-packaged Voxtype TUI when Prism is unavailable.  Only desktop entries carrying
-our exact ownership marker may be replaced or removed.
+Prism owns voxtype-prism.desktop and leaves Voxtype's packaged
+voxtype-configure.desktop entry visible. Upgrades remove only the earlier
+Prism-marked configuration override. Only desktop entries carrying our exact
+ownership marker may be replaced or removed.
 """
 
 from __future__ import annotations
@@ -25,12 +25,14 @@ from pathlib import Path
 PLUGIN_ID = "io.github.jonhenshaw.voxtype-prism"
 MARKER = "X-Voxtype-Prism-Managed=true"
 MAX_DESKTOP_BYTES = 64 * 1024
+PRISM_DESKTOP_NAME = "voxtype-prism.desktop"
+LEGACY_DESKTOP_NAME = "voxtype-configure.desktop"
 
 DESKTOP_CONTENT = f"""[Desktop Entry]
 Type=Application
 Version=1.0
-Name=Voxtype Configuration
-GenericName=Voice-to-Text Settings
+Name=Voxtype Prism
+GenericName=Voice Refinement Settings
 Comment=Configure Voxtype Prism refinement, prompts, dictionary, and indicators
 Exec=/usr/bin/bash -c "IFS=; set -f; plugin=\\\\${{XDG_CONFIG_HOME:-\\\\$HOME/.config}}/omarchy/plugins/{PLUGIN_ID}/scripts/voxtype-prism-launcher; if [[ -x \\\\$plugin ]]; then exec \\\\$plugin open; fi; exec /usr/bin/voxtype-configure-launcher"
 Icon=audio-input-microphone
@@ -54,7 +56,12 @@ def data_home() -> Path:
 
 def desktop_target() -> Path:
     override = os.environ.get("VOXTYPE_PRISM_DESKTOP_TARGET", "").strip()
-    return Path(override).expanduser() if override else data_home() / "applications" / "voxtype-configure.desktop"
+    return Path(override).expanduser() if override else data_home() / "applications" / PRISM_DESKTOP_NAME
+
+
+def legacy_desktop_target() -> Path:
+    override = os.environ.get("VOXTYPE_PRISM_LEGACY_DESKTOP_TARGET", "").strip()
+    return Path(override).expanduser() if override else data_home() / "applications" / LEGACY_DESKTOP_NAME
 
 
 def bounded_read(path: Path) -> bytes | None:
@@ -385,12 +392,22 @@ def status(path: Path) -> dict[str, object]:
     except LauncherError as error:
         return {"state": "conflict", "target": str(path), "message": str(error)}
     if content is None:
-        return {"state": "stock", "target": str(path)}
+        return {"state": "absent", "target": str(path)}
     try:
         owned = MARKER in content.decode("utf-8").splitlines()
     except UnicodeDecodeError:
         owned = False
     return {"state": "prism" if owned else "conflict", "target": str(path)}
+
+
+def cleanup_legacy_override(path: Path) -> str:
+    current = status(path)
+    if current["state"] == "absent":
+        return "absent"
+    if current["state"] != "prism":
+        return "preserved"
+    remove_owned(path)
+    return "removed"
 
 
 def parser() -> argparse.ArgumentParser:
@@ -402,6 +419,7 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     target = desktop_target()
+    legacy_target = legacy_desktop_target()
     try:
         if args.action == "open":
             return open_panel()
@@ -409,17 +427,40 @@ def main(argv: list[str] | None = None) -> int:
             return exec_stock()
         if args.action == "install":
             install_window_rule()
+            if target == legacy_target:
+                raise LauncherError("Prism and legacy desktop targets must be distinct")
+            legacy_outcome = cleanup_legacy_override(legacy_target)
             changed = atomic_install(target)
-            print(json.dumps({"ok": True, "changed": changed, **status(target)}, separators=(",", ":")))
+            print(json.dumps({
+                "ok": True,
+                "changed": changed,
+                "legacyOverride": legacy_outcome,
+                **status(target),
+            }, separators=(",", ":")))
             return 0
         if args.action == "remove":
             changed = remove_owned(target)
-            print(json.dumps({"ok": True, "changed": changed, **status(target)}, separators=(",", ":")))
+            legacy_outcome = cleanup_legacy_override(legacy_target)
+            print(json.dumps({
+                "ok": True,
+                "changed": changed,
+                "legacyOverride": legacy_outcome,
+                **status(target),
+            }, separators=(",", ":")))
             return 0
-        print(json.dumps({"ok": True, **status(target)}, separators=(",", ":")))
+        print(json.dumps({
+            "ok": True,
+            "legacyOverride": status(legacy_target)["state"],
+            **status(target),
+        }, separators=(",", ":")))
         return 0
     except (LauncherError, OSError, subprocess.SubprocessError) as error:
-        print(json.dumps({"ok": False, "error": str(error), **status(target)}, separators=(",", ":")))
+        print(json.dumps({
+            "ok": False,
+            "error": str(error),
+            "legacyOverride": status(legacy_target)["state"],
+            **status(target),
+        }, separators=(",", ":")))
         return 1
 
 

@@ -100,9 +100,10 @@
   limits, tab navigation, dirty-close interception, and clean close.
 - The fake-provider unit test exercises raw-to-refined output without writing
   the candidate settings or using the network.
-- Direct shell summon and the user-scoped `voxtype-configure.desktop` path both
-  opened the deployed panel. Hyprland reported title `Voxtype Prism`, floating
-  1120 x 760, centered at 640,308; no stock configuration window appeared.
+- Direct shell summon and the separate user-scoped `voxtype-prism.desktop` path
+  both opened the deployed panel. Hyprland reported title `Voxtype Prism`,
+  floating 1120 x 760 and centered. The native `voxtype-configure.desktop`
+  remains available as a separate packaged settings application.
 - Live shell logs were checked after the launcher fixes. There were no panel
   load errors or desktop-entry escape warnings. Offscreen capture emits only
   the expected platform warning and unsupported-window-mask warning.

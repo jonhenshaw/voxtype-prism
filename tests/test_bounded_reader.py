@@ -234,6 +234,7 @@ class BoundedReaderTests(unittest.TestCase):
         manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
         service = (ROOT / "Service.qml").read_text(encoding="utf-8")
         panel = (ROOT / "SettingsPanel.qml").read_text(encoding="utf-8")
+        launcher = (ROOT / "scripts" / "voxtype-prism-launcher").read_text(encoding="utf-8")
 
         self.assertEqual(manifest["kinds"], ["service", "panel"])
         self.assertEqual(manifest["entryPoints"]["service"], "Service.qml")
@@ -245,6 +246,9 @@ class BoundedReaderTests(unittest.TestCase):
         self.assertIn("FloatingWindow", panel)
         self.assertIn("IndicatorVisual", panel)
         self.assertNotIn("PanelWindow", panel)
+        self.assertIn('PRISM_DESKTOP_NAME = "voxtype-prism.desktop"', launcher)
+        self.assertIn('LEGACY_DESKTOP_NAME = "voxtype-configure.desktop"', launcher)
+        self.assertIn("cleanup_legacy_override", launcher)
 
     def test_motion_off_freezes_audio_driven_levels(self) -> None:
         controller = (ROOT / "IndicatorController.qml").read_text(encoding="utf-8")

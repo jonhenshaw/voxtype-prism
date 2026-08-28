@@ -21,7 +21,7 @@ SPEC.loader.exec_module(MODULE)
 class LauncherTests(unittest.TestCase):
     def test_install_is_private_atomic_and_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "applications" / "voxtype-configure.desktop"
+            target = Path(directory) / "applications" / "voxtype-prism.desktop"
             self.assertTrue(MODULE.atomic_install(target))
             self.assertFalse(MODULE.atomic_install(target))
             self.assertEqual(target.stat().st_mode & 0o777, 0o644)
@@ -29,10 +29,12 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(MODULE.status(target)["state"], "prism")
             self.assertEqual(list(target.parent.glob("*.tmp.*")), [])
             self.assertIn(r"\\$", target.read_text(encoding="utf-8"))
+            self.assertIn("Name=Voxtype Prism", target.read_text(encoding="utf-8"))
+            self.assertNotIn("Name=Voxtype Configuration", target.read_text(encoding="utf-8"))
 
     def test_install_refuses_unowned_regular_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "voxtype-configure.desktop"
+            target = Path(directory) / "voxtype-prism.desktop"
             target.write_text("[Desktop Entry]\nName=Mine\n", encoding="utf-8")
             with self.assertRaisesRegex(MODULE.LauncherError, "unowned"):
                 MODULE.atomic_install(target)
@@ -43,7 +45,7 @@ class LauncherTests(unittest.TestCase):
             root = Path(directory)
             victim = root / "victim"
             victim.write_text("keep", encoding="utf-8")
-            target = root / "voxtype-configure.desktop"
+            target = root / "voxtype-prism.desktop"
             target.symlink_to(victim)
             with self.assertRaisesRegex(MODULE.LauncherError, "unsafe"):
                 MODULE.atomic_install(target)
@@ -51,7 +53,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_install_never_overwrites_concurrent_new_target(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "voxtype-configure.desktop"
+            target = Path(directory) / "voxtype-prism.desktop"
             original_link = MODULE.os.link
             injected = False
 
@@ -69,7 +71,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_install_restores_concurrent_replacement_moved_to_quarantine(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "voxtype-configure.desktop"
+            target = Path(directory) / "voxtype-prism.desktop"
             MODULE.atomic_install(target)
             replacement = "[Desktop Entry]\nName=Foreign\n"
             original_rename = MODULE.os.rename
@@ -92,7 +94,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_remove_only_owned_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "voxtype-configure.desktop"
+            target = Path(directory) / "voxtype-prism.desktop"
             MODULE.atomic_install(target)
             self.assertTrue(MODULE.remove_owned(target))
             self.assertFalse(target.exists())
@@ -100,7 +102,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_remove_restores_concurrent_unowned_replacement(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "voxtype-configure.desktop"
+            target = Path(directory) / "voxtype-prism.desktop"
             MODULE.atomic_install(target)
             replacement = "[Desktop Entry]\nName=Foreign\n"
             original_rename = MODULE.os.rename
@@ -120,14 +122,86 @@ class LauncherTests(unittest.TestCase):
 
     def test_status_action_never_emits_desktop_contents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "voxtype-configure.desktop"
+            target = Path(directory) / "voxtype-prism.desktop"
             MODULE.atomic_install(target)
-            with patch.dict(os.environ, {"VOXTYPE_PRISM_DESKTOP_TARGET": str(target)}):
+            legacy = Path(directory) / "voxtype-configure.desktop"
+            with patch.dict(os.environ, {
+                "VOXTYPE_PRISM_DESKTOP_TARGET": str(target),
+                "VOXTYPE_PRISM_LEGACY_DESKTOP_TARGET": str(legacy),
+            }):
                 with patch("builtins.print") as output:
                     self.assertEqual(MODULE.main(["status"]), 0)
             payload = json.loads(output.call_args.args[0])
             self.assertEqual(payload["state"], "prism")
             self.assertNotIn("Exec", output.call_args.args[0])
+
+    def test_install_migrates_owned_legacy_override_to_separate_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_home = Path(directory)
+            applications = data_home / "applications"
+            legacy = applications / MODULE.LEGACY_DESKTOP_NAME
+            legacy_content = MODULE.DESKTOP_CONTENT.replace(
+                "Name=Voxtype Prism", "Name=Voxtype Configuration"
+            )
+            MODULE.atomic_install(legacy, legacy_content)
+
+            with patch.dict(os.environ, {
+                "XDG_DATA_HOME": str(data_home),
+                "VOXTYPE_PRISM_DESKTOP_TARGET": "",
+                "VOXTYPE_PRISM_LEGACY_DESKTOP_TARGET": "",
+            }), patch.object(MODULE, "install_window_rule"), patch("builtins.print") as output:
+                self.assertEqual(MODULE.main(["install"]), 0)
+
+            target = applications / MODULE.PRISM_DESKTOP_NAME
+            payload = json.loads(output.call_args.args[0])
+            self.assertFalse(legacy.exists())
+            self.assertTrue(target.exists())
+            self.assertEqual(payload["legacyOverride"], "removed")
+            self.assertEqual(payload["state"], "prism")
+            self.assertIn("Name=Voxtype Prism", target.read_text(encoding="utf-8"))
+
+    def test_install_preserves_foreign_native_configuration_override(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_home = Path(directory)
+            applications = data_home / "applications"
+            applications.mkdir(parents=True)
+            legacy = applications / MODULE.LEGACY_DESKTOP_NAME
+            foreign = "[Desktop Entry]\nName=My Voxtype Settings\n"
+            legacy.write_text(foreign, encoding="utf-8")
+
+            with patch.dict(os.environ, {
+                "XDG_DATA_HOME": str(data_home),
+                "VOXTYPE_PRISM_DESKTOP_TARGET": "",
+                "VOXTYPE_PRISM_LEGACY_DESKTOP_TARGET": "",
+            }), patch.object(MODULE, "install_window_rule"), patch("builtins.print") as output:
+                self.assertEqual(MODULE.main(["install"]), 0)
+
+            payload = json.loads(output.call_args.args[0])
+            self.assertEqual(legacy.read_text(encoding="utf-8"), foreign)
+            self.assertEqual(payload["legacyOverride"], "preserved")
+            self.assertTrue((applications / MODULE.PRISM_DESKTOP_NAME).exists())
+
+    def test_remove_cleans_new_and_owned_legacy_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            data_home = Path(directory)
+            applications = data_home / "applications"
+            target = applications / MODULE.PRISM_DESKTOP_NAME
+            legacy = applications / MODULE.LEGACY_DESKTOP_NAME
+            MODULE.atomic_install(target)
+            MODULE.atomic_install(legacy)
+
+            with patch.dict(os.environ, {
+                "XDG_DATA_HOME": str(data_home),
+                "VOXTYPE_PRISM_DESKTOP_TARGET": "",
+                "VOXTYPE_PRISM_LEGACY_DESKTOP_TARGET": "",
+            }), patch("builtins.print") as output:
+                self.assertEqual(MODULE.main(["remove"]), 0)
+
+            payload = json.loads(output.call_args.args[0])
+            self.assertFalse(target.exists())
+            self.assertFalse(legacy.exists())
+            self.assertEqual(payload["legacyOverride"], "removed")
+            self.assertEqual(payload["state"], "absent")
 
     def test_open_accepts_only_affirmative_shell_result(self) -> None:
         completed = __import__("subprocess").CompletedProcess([], 0, stdout="true\n", stderr="")

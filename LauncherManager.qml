@@ -1,8 +1,9 @@
 import QtQuick
 import Quickshell.Io
 
-// Installs the user-scoped desktop entry that makes Quick Shell open Prism.
-// The helper owns all file validation and mutation; QML receives only status.
+// Installs Prism's distinct user-scoped Quick Shell entry. The helper also
+// removes only the older Prism-owned Voxtype Configuration override so the
+// packaged native settings entry remains visible. QML receives only status.
 Item {
     id: root
 
