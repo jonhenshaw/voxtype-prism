@@ -60,6 +60,10 @@ DEFAULT_DICTIONARY = """# Custom dictionary for Voxtype LLM refine.
 #   hypr land → Hyprland
 #
 # Blank lines and # comments are ignored.
+
+OH-MAH-CHI -> Omarchy
+HERDER -> herdr
+Hyper Land -> Hyprland
 """
 
 

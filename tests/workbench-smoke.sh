@@ -14,7 +14,9 @@ ln -s "$repo_root/scripts" "$smoke_root/scripts"
 
 for file in \
   SettingsPanel.qml SettingsBackend.qml SettingsNavItem.qml \
-  SettingsSlider.qml PrismTextArea.qml IndicatorVisual.qml; do
+  SettingsSlider.qml PrismTextArea.qml PrismPageHeader.qml \
+  PrismFormField.qml PrismSection.qml PrismOpticalIconButton.qml \
+  IndicatorVisual.qml; do
   ln -s "$repo_root/$file" "$smoke_root/$file"
 done
 
@@ -103,7 +105,7 @@ ShellRoot {
                 workbench.closeDiscardDialog()
                 workbench.syncDraft()
                 if (workbench.dirty) {
-                    fail("reset did not restore the saved snapshot")
+                    fail("revert did not restore the saved snapshot")
                     return
                 }
                 workbench.rawSample = "😀".repeat(1025)

@@ -138,7 +138,14 @@ class RefineHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "refine-dictionary.md"
             created = MODULE.ensure_dictionary_file(path)
-            self.assertTrue(created.read_text(encoding="utf-8").startswith("# Custom dictionary"))
+            default_text = created.read_text(encoding="utf-8")
+            self.assertTrue(default_text.startswith("# Custom dictionary"))
+            for entry in (
+                "OH-MAH-CHI -> Omarchy",
+                "HERDER -> herdr",
+                "Hyper Land -> Hyprland",
+            ):
+                self.assertIn(entry, default_text)
             created.write_text("Voxtype\n", encoding="utf-8")
             MODULE.ensure_dictionary_file(path)
             self.assertEqual(path.read_text(encoding="utf-8"), "Voxtype\n")

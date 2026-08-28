@@ -260,6 +260,7 @@ class BoundedReaderTests(unittest.TestCase):
         panel = (ROOT / "SettingsPanel.qml").read_text(encoding="utf-8")
         backend = (ROOT / "SettingsBackend.qml").read_text(encoding="utf-8")
         editor = (ROOT / "PrismTextArea.qml").read_text(encoding="utf-8")
+        optical_button = (ROOT / "PrismOpticalIconButton.qml").read_text(encoding="utf-8")
 
         self.assertIn('property string revision: ""', backend)
         self.assertIn("revisionConflictSnapshot", backend)
@@ -277,6 +278,32 @@ class BoundedReaderTests(unittest.TestCase):
         self.assertIn("maximumBytes: 4096", panel)
         self.assertIn("maximumBytes: 32768", panel)
         self.assertIn("byteCount", editor)
+        self.assertIn("PrismOpticalIconButton {", panel)
+        self.assertIn("tightBoundingRect", optical_button)
+        self.assertIn("glyph.baselineOffset + root.tightBounds.y", optical_button)
+        self.assertIn("size: Style.spacing.controlHeight", optical_button)
+        format_guide = panel.index('text: "Format guide"')
+        self.assertIn(
+            "font.pixelSize: Style.font.subtitle",
+            panel[format_guide : format_guide + 400],
+        )
+
+        focus_scope = panel.index("id: focusScope")
+        workbench = panel.index("id: workbench")
+        for sequence in (
+            'sequence: "Ctrl+S"',
+            'sequence: "Ctrl+Enter"',
+            'sequence: "Alt+1"',
+            'sequence: "Alt+2"',
+            'sequence: "Alt+3"',
+            'sequence: "Alt+4"',
+            'sequence: "F1"',
+            'sequence: "Escape"',
+        ):
+            with self.subTest(sequence=sequence):
+                shortcut = panel.index(sequence)
+                self.assertGreater(shortcut, focus_scope)
+                self.assertLess(shortcut, workbench)
 
 
 if __name__ == "__main__":

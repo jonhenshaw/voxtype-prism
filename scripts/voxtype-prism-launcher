@@ -263,6 +263,7 @@ def install_window_rule() -> None:
         "voxtype_prism_window_rule:set_enabled(false) end; "
         "voxtype_prism_window_rule = hl.window_rule({ "
         'match = { title = "^(Voxtype Prism)$" }, '
+        'tag = "-default-opacity", opacity = "1 1", '
         "float = true, center = true, size = { 1120, 760 } })"
     )
     result = subprocess.run(
@@ -275,6 +276,8 @@ def install_window_rule() -> None:
     if result.returncode == 0:
         return
     for rule in (
+        "tag -default-opacity, title:^(Voxtype Prism)$",
+        "opacity 1 1, title:^(Voxtype Prism)$",
         "float, title:^(Voxtype Prism)$",
         "size 1120 760, title:^(Voxtype Prism)$",
         "center, title:^(Voxtype Prism)$",

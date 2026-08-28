@@ -32,6 +32,7 @@ FocusScope {
     readonly property int byteCount: utf8ByteLength(editor.text)
     readonly property bool overByteLimit: maximumBytes > 0 && byteCount > maximumBytes
     readonly property bool invalid: hasError || overByteLimit
+    readonly property bool countVisible: showCount || overByteLimit
 
     signal edited()
 
@@ -66,11 +67,13 @@ FocusScope {
         id: frame
         anchors.fill: parent
         radius: Style.cornerRadius
-        color: Style.controlFill(root.activeEditorFocus, root.hovered,
-            root.foreground, root.invalid ? root.errorColor : root.accent)
-        borderSpec: Border.controlSpec(root.invalid ? "focus"
-            : (root.activeEditorFocus ? "focus" : (root.hovered ? "hover-cursor" : "normal")),
-            root.foreground, root.invalid ? root.errorColor : root.accent)
+        color: Qt.rgba(Color.popups.background.r, Color.popups.background.g,
+            Color.popups.background.b, 1)
+        borderSpec: root.activeEditorFocus
+            ? Border.flat(root.invalid ? root.errorColor : root.accent, 2)
+            : Border.controlSpec(root.invalid ? "focus"
+                : (root.hovered ? "hover-cursor" : "normal"),
+                root.foreground, root.invalid ? root.errorColor : root.accent)
 
         HoverHandler { id: hoverHandler }
 
@@ -81,7 +84,7 @@ FocusScope {
             anchors.rightMargin: frame.borderRight
             anchors.topMargin: frame.borderTop
             anchors.bottomMargin: frame.borderBottom
-                + ((root.showCount || root.maximumBytes > 0) ? countText.height + Style.spacing.sm : 0)
+                + (root.countVisible ? countText.height + Style.spacing.sm : 0)
             clip: true
             QQC.ScrollBar.horizontal.policy: QQC.ScrollBar.AlwaysOff
 
@@ -94,7 +97,7 @@ FocusScope {
                 color: root.foreground
                 selectionColor: Style.selectionFillFor(root.foreground, root.accent)
                 selectedTextColor: root.foreground
-                placeholderTextColor: Qt.darker(root.foreground, 1.6)
+                placeholderTextColor: Qt.darker(root.foreground, 1.28)
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body
                 leftPadding: root.horizontalPadding
@@ -119,7 +122,7 @@ FocusScope {
 
         Text {
             id: countText
-            visible: root.showCount || root.maximumBytes > 0
+            visible: root.countVisible
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             anchors.rightMargin: frame.borderRight + Style.spacing.controlPaddingX
@@ -130,7 +133,7 @@ FocusScope {
                     + (root.overByteLimit ? " · limit exceeded" : ""))
                 : (root.characterCount.toLocaleString(Qt.locale(), "f", 0)
                     + " / " + root.maximumLength.toLocaleString(Qt.locale(), "f", 0))
-            color: root.invalid ? root.errorColor : Qt.darker(root.foreground, 1.5)
+            color: root.invalid ? root.errorColor : Qt.darker(root.foreground, 1.25)
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
         }

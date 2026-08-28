@@ -1,134 +1,124 @@
 # Refinement Workbench design QA
 
-**Source visual truth**
+Date: 2026-08-27
 
-- `docs/images/refinement-workbench-reference.png`
-- Selected Option 1, Refinement Workbench.
+## Audit scope
 
-**Rendered implementation**
+Combined UX, visual, keyboard, resize, and accessibility-risk review of the
+Refinement, Prompt, Dictionary, and Indicator destinations. The prior Option 1
+mock is historical context, not a fidelity target; live user screenshots showed
+that reproducing it preserved hierarchy and alignment failures.
 
-- `docs/images/refinement-workbench-implementation.png`
-- Production `SettingsPanel.qml` rendered with the installed Omarchy `Ui` and
-  `Commons` modules, live redacted settings, and the software Qt Quick backend
-  through `tests/capture-workbench.sh`.
+## User goal and accessibility target
 
-**Viewport and normalization**
+Configure Prism's enhancement layer without learning four different page
+layouts. Every destination must remain readable and operable at the normal
+1120 x 760 window, the 900 x 620 minimum, and larger Omarchy text. Normal-size
+supporting copy targets at least the usual 4.5:1 contrast threshold.
 
-- Production window: 1120 x 760 logical QML pixels.
-- Live monitor: 1.6 device scale; the compositor reports the deployed window at
-  exactly 1120 x 760 logical pixels, floating and centered.
-- Source pixels: 1487 x 1058, treated as the source's native 1x design canvas.
-- Implementation pixels: 1120 x 760 at `QT_SCALE_FACTOR=1`.
-- Full comparison normalization: implementation scaled uniformly to
-  1487 x 1009 (1.3277x), then centered on a 1487 x 1058 black canvas. No
-  non-uniform stretching was used.
-- Side-by-side evidence:
-  `docs/images/refinement-workbench-comparison.png`.
+## Before
 
-**State**
+The supplied live screenshots established the starting defects:
 
-- Refinement tab, enabled, Grok ready, no model override, live effective-model
-  label, listening indicator, populated raw and refined text, successful test
-  status, and a dirty draft so Reset and Save are enabled.
-- The success output and 418 ms duration are capture-only presentation data.
-  No provider request was made and no credential entered QML.
-- Supporting production captures also cover Prompt, Dictionary, and Indicator,
-  plus Signal, Halo, and Bar Pulse indicator presets.
+- Refinement placed a full labeled toggle between the title and an unrelated,
+  hard-coded Signal preview.
+- Hand-sized rows, percentage widths, and x/y spacer arithmetic produced
+  inconsistent field widths and baselines.
+- Prompt over-emphasized advice; Dictionary stretched a short tutorial to full
+  editor height; Indicator used a large stage for a 156 x 40 visual.
+- The footer scattered actions across the page and used misleading Reset and
+  Test this prompt labels.
+- Omarchy's default window opacity exposed browser and terminal content through
+  the application.
+- Common 1.4 to 1.55 foreground darkening produced roughly 4.28:1 to 3.60:1
+  contrast on the active Tokyo Night surface.
 
-## Findings
+## Implemented design system
 
-- No actionable P0, P1, or P2 mismatch remains.
-- The implementation preserves the source's information architecture and
-  hierarchy: 18% navigation rail, refinement-first header, provider/model/
-  readiness row, paired raw/output work area, centered explicit test action,
-  privacy disclosure, and persistent Reset/Save/Advanced footer.
-- Intentional deviation: production uses live Omarchy font, fill, border,
-  focus, accent, and spacing tokens instead of reproducing the mock's pink
-  gradient skin or drawing a fake title bar. This is required by the product
-  spec and keeps Prism native across themes.
-- Intentional addition: the model control distinguishes an optional override
-  from the effective provider model. This is useful state, fits without
-  collision, and does not change the hierarchy.
-- P3 fixed during QA: the first implementation capture repeated the long model
-  name in the success status and elided the duration. The status now reads
-  `Refinement completed · 418 ms`; the model remains visible in its dedicated
-  field.
+- PrismPageHeader.qml gives every page one title/subtitle rhythm.
+- PrismFormField.qml aligns labels, metadata, controls, and helper text.
+- PrismSection.qml provides opaque, theme-native grouping.
+- Page composition uses ColumnLayout, RowLayout, and GridLayout; manual x/y
+  spacer calculations were removed from the four page bodies.
+- Every page has a clipped vertical scrolling fallback for minimum-window and
+  larger-text combinations.
+- PrismTextArea.qml uses an opaque editor surface, a 2px accent focus border,
+  readable placeholder/count copy, and conditional byte counts.
+- Navigation keeps shortcut labels stable; the footer groups status, Advanced,
+  Revert, and Save, then collapses safely at narrow effective widths.
+- Dialog icon buttons center the glyph's tight painted bounds inside the native
+  control-height target, avoiding Nerd Font advance-box drift.
+- The launcher removes the default-opacity tag and applies opacity 1 1.
 
-## Required fidelity surfaces
+## Flow steps and health
 
-- **Fonts and typography:** both designs use a monospace UI voice. Production
-  uses `Style.font.family` and the native display/heading/subtitle/body/caption
-  scale. Labels remain legible at the machine's 1.6 display scale, hierarchy is
-  clear, long model text elides safely, and body copy wraps without clipping.
-- **Spacing and layout rhythm:** the normalized full view shows matching major
-  regions and ordering. At 1120 x 760, navigation, provider controls, editors,
-  privacy copy, and footer actions do not overlap or leave controls off-screen.
-  Prompt, Dictionary, and Indicator captures show the same margins and footer
-  alignment.
-- **Colors and visual tokens:** source intent is a dark, focused workbench with
-  one expressive signal color. Production maps this to `Color.background`,
-  `Color.popups.background`, `Color.foreground`, `Color.muted`, `Color.accent`,
-  and `Color.urgent`; semantic readiness, error, focus, and disabled states keep
-  sufficient visual separation.
-- **Image quality and asset fidelity:** this settings surface requires no
-  photographic or branded raster assets. Icons use Omarchy's installed icon
-  font and indicator visuals reuse the real runtime QML renderer. Captures are
-  lossless PNGs with no scaling artifacts in the implementation truth image.
-- **Copy and content:** provider privacy is explicit, tests disclose that they
-  do not save changes, local prompt/dictionary paths are named, model override
-  behavior is clear, and Advanced Voxtype settings remains an escape hatch.
-- **Controls and accessibility:** native buttons, dropdowns, text fields,
-  sliders, and toggle components expose accessible names; focusable actions and
-  documented shortcuts are present; reduced motion is injectable; dirty close,
-  modal focus restoration, validation, conflict, loading, success, failure,
-  and stale-output states are implemented.
+1. **Refinement - healthy.** Enablement is a full-width setting row. Provider
+   and model fields share a two-column grid. Test is in the section header,
+   raw/output editors are equal, and privacy copy stays attached to the test.
+2. **Prompt - healthy.** One editor owns the page. Guidance is a short helper,
+   byte counts appear only near the limit, and Try in Refinement accurately
+   names the navigation action.
+3. **Dictionary - healthy.** The editor and intrinsic-height format guide align
+   at normal width. At narrow effective widths or larger text, the guide
+   collapses into wrapping inline help rather than overflowing.
+4. **Indicator - healthy.** Preview state lives with the preview and includes
+   Listening, Streaming, Processing, and Done. Style/position, scale/glow, and
+   motion stay top-aligned; overflow scrolls instead of crossing the footer.
 
-## Focused comparison evidence
+## Accepted evidence
 
-- Header/provider/readiness:
-  `docs/images/refinement-workbench-comparison-header.png`.
-- Raw/refined workspace:
-  `docs/images/refinement-workbench-comparison-test.png`.
-- These crops were required because typography, model labeling, editor borders,
-  and status copy are too small to judge reliably in the full 3046 px montage.
+Normal 1120 x 760:
 
-## Interaction and runtime evidence
+- docs/images/refinement-workbench-implementation.png
+- docs/images/refinement-workbench-prompt.png
+- docs/images/refinement-workbench-dictionary.png
+- docs/images/refinement-workbench-indicator-signal.png
+- docs/images/refinement-workbench-indicator-halo.png
+- docs/images/refinement-workbench-indicator-bar-pulse.png
+- docs/images/refinement-workbench-indicator-streaming.png
+- docs/images/refinement-workbench-shortcuts.png
 
-- `tests/workbench-smoke.sh` opens the real panel, edits provider/prompt/
-  dictionary/indicator settings, cycles all presets, saves through the JSON
-  backend, verifies round-trip state, tests dirty re-summon, reset, UTF-8 byte
-  limits, tab navigation, dirty-close interception, and clean close.
-- The fake-provider unit test exercises raw-to-refined output without writing
-  the candidate settings or using the network.
-- Direct shell summon and the separate user-scoped `voxtype-prism.desktop` path
-  both opened the deployed panel. Hyprland reported title `Voxtype Prism`,
-  floating 1120 x 760 and centered. The native `voxtype-configure.desktop`
-  remains available as a separate packaged settings application.
-- Live shell logs were checked after the launcher fixes. There were no panel
-  load errors or desktop-entry escape warnings. Offscreen capture emits only
-  the expected platform warning and unsupported-window-mask warning.
+Responsive checks:
 
-## Comparison history
+- docs/images/refinement-workbench-dictionary-min-large-text.png
+  (900 x 620, 15px Omarchy base font)
+- docs/images/refinement-workbench-indicator-large-text.png
+  (1120 x 760, 15px Omarchy base font)
+- docs/images/refinement-workbench-refinement-min-font18.png
+- docs/images/refinement-workbench-prompt-min-font18.png
+- docs/images/refinement-workbench-dictionary-min-font18.png
+- docs/images/refinement-workbench-indicator-min-font18.png
+  (all 900 x 620 with an 18px Omarchy base font)
 
-1. First side-by-side pass: no P0/P1/P2 mismatch. One P3 status truncation was
-   found; the redundant model repetition was removed.
-2. Post-fix pass: full and focused comparisons show the duration in full and no
-   new P0/P1/P2 issue. Prompt, Dictionary, Indicator, Signal, Halo, and Bar Pulse
-   supporting captures were also reviewed for clipping and alignment.
+Each saved PNG was opened individually at original detail before acceptance.
 
-## Implementation checklist
+## Behavioral evidence
 
-- [x] Match selected workbench structure and hierarchy.
-- [x] Use native Omarchy theme and control primitives.
-- [x] Preserve same-state success, dirty, and listening evidence.
-- [x] Verify all supporting tabs and three indicator presets.
-- [x] Fix status truncation and recapture.
-- [x] Check live launcher geometry and shell errors.
+- 119 Python unit tests pass.
+- tests/workbench-smoke.sh passes backend draft/save/revert/conflict/close
+  contracts. It is a property-level smoke test, not user-input simulation.
+- omarchy plugin validate ., tests/qml-lint.sh, and git diff --check pass.
+  QML lint retains the repository's known incomplete external-singleton type
+  warnings and reports no fatal error.
+- Independent visual-system and DHH-inspired adversarial reviewers report no
+  remaining P0/P1/P2 blocker after the narrow and larger-text fixes.
+- Live Hyprland inspection reports opacity 1 and no default-opacity tag; a fresh
+  compositor capture shows no browser or terminal bleed.
+- A QtTest mouse-wheel event against the 900 x 620, 18px Indicator page moved
+  its Flickable contentY from zero, proving clipped lower controls are reachable.
+- A live focused-window regression sends Alt+4, F1, Escape, and Alt+1 through
+  Wayland virtual-keyboard input. OCR verifies the Indicator page, keyboard
+  shortcuts overlay, overlay dismissal, and return to Refinement in order.
 
-## Follow-up polish
+## Evidence limits
 
-- No blocking polish remains. A future Omarchy theme token for a stronger
-  always-primary action fill could make Test refinement more prominent without
-  introducing a Prism-only button style.
+- Static screenshots do not prove assistive-technology announcements or full
+  WCAG conformance.
+- Live key evidence covers page shortcuts, the shortcuts overlay, and Escape.
+  Tab traversal, dropdown selection, and dirty-dialog keyboard flows remain
+  covered structurally or by property smoke rather than an exhaustive live-key
+  sequence.
+- Provider network success depends on the selected provider and is outside a
+  no-credential UI regression.
 
 final result: passed

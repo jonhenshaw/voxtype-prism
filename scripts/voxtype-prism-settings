@@ -43,6 +43,7 @@ MAX_MODEL_BYTES = 512
 MAX_TEST_SAMPLE_BYTES = 4 * 1024
 MAX_TEST_OUTPUT_BYTES = 64 * 1024
 MAX_TRAMPOLINE_BYTES = 4 * 1024
+MAX_REFINE_HELPER_BYTES = 64 * 1024
 MAX_TRANSACTION_JOURNAL_BYTES = 256 * 1024
 TRANSACTION_JOURNAL_VERSION = 1
 
@@ -339,6 +340,31 @@ def _normalized_absolute(path: Path | str) -> str:
     return os.path.abspath(os.fspath(Path(path).expanduser()))
 
 
+def _matches_current_refine_helper(path: str) -> bool:
+    candidate = Path(path).expanduser()
+    current = Path(refine_command())
+    if _normalized_absolute(candidate) == _normalized_absolute(current):
+        return True
+    if candidate.name != current.name:
+        return False
+    try:
+        candidate_source = REFINE.read_bounded_text(
+            candidate,
+            MAX_REFINE_HELPER_BYTES,
+            "legacy Prism refine helper",
+            missing_ok=False,
+        )
+        current_source = REFINE.read_bounded_text(
+            current,
+            MAX_REFINE_HELPER_BYTES,
+            "current Prism refine helper",
+            missing_ok=False,
+        )
+    except RuntimeError:
+        return False
+    return candidate_source == current_source
+
+
 def _is_exact_legacy_trampoline(command: str) -> bool:
     wrapper = legacy_trampoline_path()
     if _normalized_absolute(command) != _normalized_absolute(wrapper):
@@ -410,7 +436,7 @@ def _is_exact_legacy_trampoline(command: str) -> bool:
         and isinstance(path_call.args[0].value, str)
     ):
         return False
-    return _normalized_absolute(path_call.args[0].value) == refine_command()
+    return _matches_current_refine_helper(path_call.args[0].value)
 
 
 def inspect_hook(text: str | None) -> HookInfo:

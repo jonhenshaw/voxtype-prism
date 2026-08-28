@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as QQC
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
@@ -20,6 +21,8 @@ Item {
     // this injectable so the host (or a future shell preference) can disable
     // every decorative transition and indicator preview animation at once.
     property bool motionEnabled: true
+    property int preferredWindowWidth: 1120
+    property int preferredWindowHeight: 760
 
     readonly property string pluginId: manifest && manifest.id
         ? String(manifest.id) : "io.github.jonhenshaw.voxtype-prism"
@@ -140,6 +143,10 @@ Item {
     function finiteNumber(value, fallback) {
         const number = Number(value)
         return isFinite(number) ? number : fallback
+    }
+
+    function opaqueColor(value) {
+        return Qt.rgba(value.r, value.g, value.b, 1)
     }
 
     function titleCase(value) {
@@ -462,39 +469,13 @@ Item {
         onTriggered: backend.successMessage = ""
     }
 
-    Shortcut { sequence: "Ctrl+S"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.saveChanges() }
-    Shortcut { sequence: "Ctrl+Return"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.runTest() }
-    Shortcut { sequence: "Ctrl+Enter"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.runTest() }
-    Shortcut { sequence: "Alt+1"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.selectTab(0) }
-    Shortcut { sequence: "Alt+2"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.selectTab(1) }
-    Shortcut { sequence: "Alt+3"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.selectTab(2) }
-    Shortcut { sequence: "Alt+4"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.selectTab(3) }
-    Shortcut {
-        sequence: "F1"
-        context: Qt.WindowShortcut
-        onActivated: {
-            if (root.discardDialogVisible) return
-            if (root.shortcutsVisible) root.hideShortcuts()
-            else root.showShortcuts()
-        }
-    }
-    Shortcut {
-        sequence: "Escape"
-        context: Qt.WindowShortcut
-        onActivated: {
-            if (root.discardDialogVisible) root.closeDiscardDialog()
-            else if (root.shortcutsVisible) root.hideShortcuts()
-            else root.requestClose("close")
-        }
-    }
-
     FloatingWindow {
         id: window
         visible: false
         title: "Voxtype Prism"
-        color: Color.background
-        implicitWidth: 1120
-        implicitHeight: 760
+        color: root.opaqueColor(Color.background)
+        implicitWidth: root.preferredWindowWidth
+        implicitHeight: root.preferredWindowHeight
         minimumSize: Qt.size(900, 620)
 
         onVisibleChanged: {
@@ -507,6 +488,38 @@ Item {
             id: focusScope
             anchors.fill: parent
             focus: true
+
+            Shortcut { sequence: "Ctrl+S"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.saveChanges() }
+            Shortcut { sequence: "Ctrl+Return"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.runTest() }
+            Shortcut { sequence: "Ctrl+Enter"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.runTest() }
+            Shortcut { sequence: "Alt+1"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.selectTab(0) }
+            Shortcut { sequence: "Alt+2"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.selectTab(1) }
+            Shortcut { sequence: "Alt+3"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.selectTab(2) }
+            Shortcut { sequence: "Alt+4"; enabled: !root.modalVisible; context: Qt.WindowShortcut; onActivated: root.selectTab(3) }
+            Shortcut {
+                sequence: "F1"
+                context: Qt.WindowShortcut
+                onActivated: {
+                    if (root.discardDialogVisible) return
+                    if (root.shortcutsVisible) root.hideShortcuts()
+                    else root.showShortcuts()
+                }
+            }
+            Shortcut {
+                sequence: "Escape"
+                context: Qt.WindowShortcut
+                onActivated: {
+                    if (root.discardDialogVisible) root.closeDiscardDialog()
+                    else if (root.shortcutsVisible) root.hideShortcuts()
+                    else root.requestClose("close")
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                color: root.opaqueColor(Color.background)
+                z: -10
+            }
 
             // FloatingWindow wraps the backing QQuickWindow, so compositor
             // close requests arrive on the attached window rather than the
@@ -526,18 +539,13 @@ Item {
                 anchors.fill: parent
                 visible: backend.hasSnapshot
                 enabled: !backend.loading && !root.modalVisible
-                opacity: enabled ? 1 : 0.62
-
-                Behavior on opacity {
-                    enabled: root.motionEnabled
-                    NumberAnimation { duration: 100 }
-                }
+                opacity: 1
 
                 Rectangle {
                     id: navigationRail
                     width: Math.max(Style.space(184), Math.round(window.width * 0.18))
                     height: parent.height
-                    color: Color.popups.background
+                    color: root.opaqueColor(Color.popups.background)
 
                     Column {
                         anchors.fill: parent
@@ -590,16 +598,6 @@ Item {
                             onClicked: root.showShortcuts()
                         }
 
-                        Text {
-                            width: parent.width
-                            text: backend.hasSnapshot
-                                ? (root.dirty ? "Unsaved changes" : "All changes saved")
-                                : "Loading settings"
-                            color: root.dirty ? Color.accent : Qt.darker(Color.foreground, 1.55)
-                            font.family: Style.font.family
-                            font.pixelSize: Style.font.caption
-                            wrapMode: Text.WordWrap
-                        }
                     }
                 }
 
@@ -614,458 +612,331 @@ Item {
                     width: parent.width - navigationRail.width - 1
                     height: parent.height
 
+                    Rectangle {
+                        anchors.fill: parent
+                        color: root.opaqueColor(Color.background)
+                        z: -10
+                    }
+
                     StackLayout {
                         id: pageStack
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
                         anchors.bottom: statusBanner.top
-                        anchors.leftMargin: Style.space(42)
-                        anchors.rightMargin: Style.space(42)
+                        anchors.leftMargin: Style.space(40)
+                        anchors.rightMargin: Style.space(40)
                         anchors.topMargin: Style.space(26)
                         anchors.bottomMargin: Style.space(18)
                         currentIndex: root.selectedTab
 
                         // -------------------------------------------------- Refinement
-                        Item {
+                        Flickable {
                             id: refinementPage
+                            clip: true
+                            contentWidth: width
+                            contentHeight: refinementContent.height
+                            boundsBehavior: Flickable.StopAtBounds
+                            QQC.ScrollBar.vertical: QQC.ScrollBar { policy: QQC.ScrollBar.AsNeeded }
 
-                            Column {
-                                anchors.fill: parent
+                            ColumnLayout {
+                                id: refinementContent
+                                width: refinementPage.width
+                                height: Math.max(refinementPage.height, implicitHeight)
                                 spacing: Style.space(14)
 
-                                Row {
-                                    width: parent.width
-                                    height: Style.space(58)
-                                    spacing: Style.spacing.controlGap
+                                PrismPageHeader {
+                                    Layout.fillWidth: true
+                                    title: "Refinement"
+                                    description: "Choose how Prism cleans dictation, then test the current draft before saving it."
+                                }
 
-                                    Text {
-                                        text: "Refinement"
-                                        color: Color.foreground
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.display
-                                        font.bold: true
-                                        Accessible.role: Accessible.Heading
-                                        Accessible.name: text
-                                    }
+                                PrismSection {
+                                    Layout.fillWidth: true
+                                    contentPadding: Style.space(14)
 
                                     Ui.Toggle {
+                                        Layout.fillWidth: true
                                         checked: root.refineEnabled
-                                        width: Style.space(170)
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        label: root.refineEnabled ? "Enabled" : "Disabled"
-                                        titleSize: Style.font.body
-                                        Accessible.name: "Enable LLM refinement"
-                                        Accessible.description: checked ? "Enabled" : "Disabled"
+                                        label: "Refine after dictation"
+                                        description: root.refineEnabled
+                                            ? "Prism cleans every completed transcript with the provider below."
+                                            : "Dictation is left unchanged until this setting is turned on."
+                                        Accessible.name: "Refine after dictation"
+                                        Accessible.description: description
                                         onClicked: root.refineEnabled = !root.refineEnabled
                                     }
 
-                                    Item {
-                                        width: Math.max(0, parent.width - x - listeningPill.width
-                                            - parent.spacing)
-                                        height: 1
-                                    }
+                                    GridLayout {
+                                        Layout.fillWidth: true
+                                        columns: 2
+                                        columnSpacing: Style.space(18)
+                                        rowSpacing: Style.spacing.labelGap
 
-                                    Item {
-                                        id: listeningPill
-                                        width: Style.space(210)
-                                        height: Style.space(58)
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        Accessible.role: Accessible.StaticText
-                                        Accessible.name: "Indicator preview: listening"
+                                        PrismFormField {
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
+                                            label: "Provider"
+                                            meta: root.providerReadinessText
+                                            hasError: !root.providerReady
+                                            helper: "Credentials stay in OhMyPi"
 
-                                        IndicatorVisual {
-                                            anchors.centerIn: parent
-                                            styleId: "signal"
-                                            phase: "recording"
-                                            levels: root.previewLevels
-                                            themePalette: root.indicatorPalette
-                                            scaleFactor: 1.15
-                                            glowIntensity: root.indicatorGlow
-                                            motionEnabled: false
+                                            Ui.Dropdown {
+                                                id: providerPicker
+                                                Layout.fillWidth: true
+                                                showLabel: false
+                                                value: root.refineProvider
+                                                options: root.providerOptions
+                                                Accessible.name: "Refinement provider"
+                                                onChanged: function(value) { root.chooseProvider(value) }
+                                            }
+                                        }
+
+                                        PrismFormField {
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
+                                            label: "Model override"
+                                            meta: root.modelBytes >= 448
+                                                ? root.modelBytes + " / 512 bytes" : ""
+                                            hasError: root.modelTooLarge
+                                            helper: "Effective model · "
+                                                + (root.effectiveModel || "Unavailable")
+
+                                            Ui.TextField {
+                                                id: modelField
+                                                Layout.fillWidth: true
+                                                text: root.refineModel
+                                                placeholderText: root.providerDefaultModel(root.refineProvider)
+                                                    ? "Default · " + root.providerDefaultModel(root.refineProvider)
+                                                    : "Provider default"
+                                                Accessible.name: "Refinement model"
+                                                Accessible.description: "Optional. Leave blank to follow the provider default."
+                                                maximumLength: 512
+                                                accent: root.modelTooLarge ? Color.urgent : Color.accent
+                                                onTextEdited: root.refineModel = text
+                                            }
                                         }
                                     }
                                 }
 
-                                Row {
-                                    width: parent.width
-                                    height: Math.max(Style.space(76), providerColumn.implicitHeight,
-                                        modelColumn.implicitHeight, readinessGroup.implicitHeight)
-                                    spacing: Style.space(18)
+                                PrismSection {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    Layout.minimumHeight: Style.space(240)
+                                    contentPadding: Style.space(14)
 
-                                    Column {
-                                        id: providerColumn
-                                        width: Math.max(Style.space(250), parent.width * 0.36)
-                                        spacing: Style.spacing.labelGap
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: Style.spacing.controlGap
 
-                                        Text {
-                                            text: "Provider"
-                                            color: Qt.darker(Color.foreground, 1.4)
-                                            font.family: Style.font.family
-                                            font.pixelSize: Style.font.bodySmall
-                                            font.bold: true
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: Style.spacing.xs
+
+                                            Text {
+                                                text: "Test current draft"
+                                                color: Color.foreground
+                                                font.family: Style.font.family
+                                                font.pixelSize: Style.font.subtitle
+                                                font.bold: true
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: "Uses the unsaved provider, model, prompt, and dictionary. Testing does not save them."
+                                                color: Qt.darker(Color.foreground, 1.25)
+                                                font.family: Style.font.family
+                                                font.pixelSize: Style.font.caption
+                                                wrapMode: Text.WordWrap
+                                            }
                                         }
 
-                                        Ui.Dropdown {
-                                            id: providerPicker
-                                            width: parent.width
-                                            showLabel: false
-                                            value: root.refineProvider
-                                            options: root.providerOptions
-                                            Accessible.name: "Refinement provider"
-                                            onChanged: function(value) { root.chooseProvider(value) }
+                                        Ui.Button {
+                                            id: testButton
+                                            text: backend.testing ? "Testing…"
+                                                : (root.testOutputStale ? "Retest draft" : "Test draft")
+                                            iconText: backend.testing ? "󰑮" : "󰑐"
+                                            iconSpinning: backend.testing && root.motionEnabled
+                                            tooltipText: "Test current draft (Ctrl+Enter)"
+                                            focusable: true
+                                            bordered: true
+                                            selected: true
+                                            foreground: Color.accent
+                                            accent: Color.accent
+                                            enabled: !backend.busy && root.rawSample.trim() !== ""
+                                                && root.testWithinLimits
+                                            opacity: enabled ? 1 : 0.5
+                                            onClicked: root.runTest()
+                                            Accessible.name: text
+                                            Accessible.description: "Shortcut Ctrl+Enter"
                                         }
                                     }
 
-                                    Column {
-                                        id: modelColumn
-                                        width: Math.max(Style.space(190), parent.width * 0.28)
-                                        spacing: Style.spacing.labelGap
+                                    RowLayout {
+                                        id: comparisonRow
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        spacing: Style.space(18)
 
-                                        Row {
-                                            width: parent.width
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            Layout.preferredWidth: 1
+                                            spacing: Style.spacing.md
+
                                             Text {
-                                                width: parent.width - modelByteCount.width
-                                                text: "Model override"
-                                                color: Qt.darker(Color.foreground, 1.4)
+                                                text: "Raw dictated text"
+                                                color: Color.foreground
                                                 font.family: Style.font.family
                                                 font.pixelSize: Style.font.bodySmall
                                                 font.bold: true
                                             }
-                                            Text {
-                                                id: modelByteCount
-                                                text: root.modelBytes + " / 512 bytes"
-                                                color: root.modelTooLarge ? Color.urgent
-                                                    : Qt.darker(Color.foreground, 1.55)
-                                                font.family: Style.font.family
-                                                font.pixelSize: Style.font.caption
+
+                                            PrismTextArea {
+                                                id: rawEditor
+                                                Layout.fillWidth: true
+                                                Layout.fillHeight: true
+                                                Layout.minimumHeight: Style.space(100)
+                                                text: root.rawSample
+                                                accessibleName: "Raw dictated text sample"
+                                                accessibleDescription: "Text sent when testing refinement"
+                                                maximumLength: 8192
+                                                maximumBytes: 4096
+                                                hasError: root.sampleTooLarge
+                                                onEdited: root.rawSample = text
                                             }
                                         }
 
-                                        Ui.TextField {
-                                            id: modelField
-                                            width: parent.width
-                                            text: root.refineModel
-                                            placeholderText: root.providerDefaultModel(root.refineProvider)
-                                                ? "Default · " + root.providerDefaultModel(root.refineProvider)
-                                                : "Provider default"
-                                            Accessible.name: "Refinement model"
-                                            Accessible.description: "Optional. Leave blank to follow the provider default."
-                                            maximumLength: 512
-                                            accent: root.modelTooLarge ? Color.urgent : Color.accent
-                                            onTextEdited: root.refineModel = text
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            Layout.preferredWidth: 1
+                                            spacing: Style.spacing.md
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                Text {
+                                                    text: "Refined output"
+                                                    color: Color.foreground
+                                                    font.family: Style.font.family
+                                                    font.pixelSize: Style.font.bodySmall
+                                                    font.bold: true
+                                                }
+                                                Item { Layout.fillWidth: true }
+                                                Text {
+                                                    id: outputStatus
+                                                    Layout.maximumWidth: Style.space(260)
+                                                    text: backend.testing ? "Testing refinement…"
+                                                        : (backend.errorMessage ? backend.errorMessage
+                                                        : (root.testOutputStale ? "Result is stale · retest"
+                                                        : (backend.testOutput ? "Completed"
+                                                        + (backend.testElapsedMs > 0 ? " · " + backend.testElapsedMs + " ms" : "") : "")))
+                                                    visible: text !== ""
+                                                    color: backend.errorMessage || root.testOutputStale
+                                                        ? Color.urgent : Color.accent
+                                                    font.family: Style.font.family
+                                                    font.pixelSize: Style.font.caption
+                                                    elide: Text.ElideRight
+                                                    Accessible.name: text
+                                                }
+                                            }
+
+                                            PrismTextArea {
+                                                Layout.fillWidth: true
+                                                Layout.fillHeight: true
+                                                Layout.minimumHeight: Style.space(100)
+                                                text: backend.testOutput
+                                                readOnly: true
+                                                hasError: backend.errorMessage !== "" && !backend.testing
+                                                opacity: root.testOutputStale ? 0.72 : 1
+                                                placeholderText: backend.testing
+                                                    ? "Refining…" : "Run a test to preview the result"
+                                                accessibleName: "Refined output"
+                                                accessibleDescription: "Latest LLM refinement result"
+                                            }
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        id: privacyRow
+                                        Layout.fillWidth: true
+                                        spacing: Style.spacing.controlGap
+
+                                        Text {
+                                            text: "󰌾"
+                                            color: Qt.darker(Color.foreground, 1.25)
+                                            font.family: Style.font.family
+                                            font.pixelSize: Style.font.icon
                                         }
 
                                         Text {
-                                            width: parent.width
-                                            text: "Effective · " + (root.effectiveModel || "Unavailable")
-                                            color: root.effectiveModel ? Color.accent : Color.urgent
+                                            Layout.fillWidth: true
+                                            text: "Test text is sent to the selected provider. Credentials remain in OhMyPi and are never shown here."
+                                            color: Qt.darker(Color.foreground, 1.25)
                                             font.family: Style.font.family
                                             font.pixelSize: Style.font.caption
-                                            elide: Text.ElideMiddle
-                                            Accessible.name: "Effective model "
-                                                + (root.effectiveModel || "unavailable")
+                                            wrapMode: Text.WordWrap
                                         }
-                                    }
-
-                                    Item { width: Math.max(0, parent.width - x - readinessGroup.width); height: 1 }
-
-                                    Row {
-                                        id: readinessGroup
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: Style.spacing.lg
-
-                                        Rectangle {
-                                            width: Style.space(9)
-                                            height: width
-                                            radius: Style.cornerRadius > 0 ? width / 2 : 0
-                                            color: root.providerReady ? Color.accent : Color.urgent
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-
-                                        Column {
-                                            spacing: Style.spacing.xs
-                                            Text {
-                                                text: "Credentials"
-                                                color: Qt.darker(Color.foreground, 1.5)
-                                                font.family: Style.font.family
-                                                font.pixelSize: Style.font.caption
-                                            }
-                                            Text {
-                                                text: root.providerReadinessText
-                                                color: root.providerReady ? Color.foreground : Color.urgent
-                                                font.family: Style.font.family
-                                                font.pixelSize: Style.font.bodySmall
-                                                font.bold: true
-                                                Accessible.name: "Provider credentials: " + text
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Ui.PanelSeparator { width: parent.width; foreground: Color.foreground }
-
-                                Text {
-                                    width: parent.width
-                                    text: "Test how your dictated text is refined by the current draft. Testing does not save your changes."
-                                    color: Qt.darker(Color.foreground, 1.4)
-                                    font.family: Style.font.family
-                                    font.pixelSize: Style.font.bodySmall
-                                    wrapMode: Text.WordWrap
-                                }
-
-                                Row {
-                                    id: comparisonRow
-                                    width: parent.width
-                                    height: Math.max(Style.space(160), parent.height - y - testButton.height
-                                        - privacyRow.height - Style.space(48))
-                                    spacing: Style.space(18)
-
-                                    Column {
-                                        width: (parent.width - comparisonArrow.width - parent.spacing * 2) / 2
-                                        height: parent.height
-                                        spacing: Style.spacing.md
-
-                                        Text {
-                                            text: "Raw dictated text"
-                                            color: Color.foreground
-                                            font.family: Style.font.family
-                                            font.pixelSize: Style.font.subtitle
-                                            font.bold: true
-                                        }
-
-                                        PrismTextArea {
-                                            id: rawEditor
-                                            width: parent.width
-                                            height: parent.height - y
-                                            text: root.rawSample
-                                            accessibleName: "Raw dictated text sample"
-                                            accessibleDescription: "Text sent when testing refinement"
-                                            maximumLength: 8192
-                                            maximumBytes: 4096
-                                            hasError: root.sampleTooLarge
-                                            onEdited: root.rawSample = text
-                                        }
-                                    }
-
-                                    Text {
-                                        id: comparisonArrow
-                                        width: Style.space(28)
-                                        text: "→"
-                                        color: Qt.darker(Color.foreground, 1.25)
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        horizontalAlignment: Text.AlignHCenter
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.display
-                                        Accessible.ignored: true
-                                    }
-
-                                    Column {
-                                        width: (parent.width - comparisonArrow.width - parent.spacing * 2) / 2
-                                        height: parent.height
-                                        spacing: Style.spacing.md
-
-                                        Text {
-                                            text: "Refined output"
-                                            color: Color.foreground
-                                            font.family: Style.font.family
-                                            font.pixelSize: Style.font.subtitle
-                                            font.bold: true
-                                        }
-
-                                        PrismTextArea {
-                                            width: parent.width
-                                            height: parent.height - outputStatus.height - parent.spacing * 2 - y
-                                            text: backend.testOutput
-                                            readOnly: true
-                                            hasError: backend.errorMessage !== "" && !backend.testing
-                                            opacity: root.testOutputStale ? 0.62 : 1
-                                            placeholderText: backend.testing
-                                                ? "Refining…" : "Run a test to preview the result"
-                                            accessibleName: "Refined output"
-                                            accessibleDescription: "Latest LLM refinement result"
-                                        }
-
-                                        Text {
-                                            id: outputStatus
-                                            width: parent.width
-                                            text: backend.testing ? "Testing refinement…"
-                                                : (backend.errorMessage ? backend.errorMessage
-                                                : (root.testOutputStale ? "Result is stale · test the current draft again"
-                                                : (backend.testOutput ? "Refinement completed"
-                                                + (backend.testElapsedMs > 0 ? " · " + backend.testElapsedMs + " ms" : "") : "")))
-                                            visible: text !== ""
-                                            color: backend.errorMessage || root.testOutputStale
-                                                ? Color.urgent : Color.accent
-                                            font.family: Style.font.family
-                                            font.pixelSize: Style.font.bodySmall
-                                            elide: Text.ElideRight
-                                            Accessible.name: text
-                                        }
-                                    }
-                                }
-
-                                Ui.Button {
-                                    id: testButton
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: backend.testing ? "Testing…"
-                                        : (root.testOutputStale ? "Retest refinement" : "Test refinement")
-                                    iconText: backend.testing ? "󰑮" : "󰑐"
-                                    iconSpinning: backend.testing && root.motionEnabled
-                                    tooltipText: "Test current draft (Ctrl+Enter)"
-                                    focusable: true
-                                    bordered: true
-                                    active: true
-                                    accent: Color.accent
-                                    enabled: !backend.busy && root.rawSample.trim() !== ""
-                                        && root.testWithinLimits
-                                    opacity: enabled ? 1 : 0.5
-                                    onClicked: root.runTest()
-                                    Accessible.name: text
-                                    Accessible.description: "Shortcut Ctrl+Enter"
-                                }
-
-                                Row {
-                                    id: privacyRow
-                                    width: parent.width
-                                    spacing: Style.spacing.controlGap
-
-                                    Text {
-                                        text: "󰌾"
-                                        color: Qt.darker(Color.foreground, 1.4)
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.icon
-                                    }
-
-                                    Text {
-                                        width: parent.width - x
-                                        text: "Privacy: dictated text is sent to the selected provider for refinement. Credentials remain in OhMyPi and are never displayed here. Do not include sensitive or personal information in test content."
-                                        color: Qt.darker(Color.foreground, 1.5)
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.caption
-                                        wrapMode: Text.WordWrap
                                     }
                                 }
                             }
                         }
 
                         // -------------------------------------------------- Prompt
-                        Item {
+                        Flickable {
                             id: promptPage
+                            clip: true
+                            contentWidth: width
+                            contentHeight: promptContent.height
+                            boundsBehavior: Flickable.StopAtBounds
+                            QQC.ScrollBar.vertical: QQC.ScrollBar { policy: QQC.ScrollBar.AsNeeded }
 
-                            Column {
-                                anchors.fill: parent
-                                spacing: Style.space(16)
+                            ColumnLayout {
+                                id: promptContent
+                                width: promptPage.width
+                                height: Math.max(promptPage.height, implicitHeight)
+                                spacing: Style.space(14)
 
-                                Column {
-                                    width: parent.width
-                                    spacing: Style.spacing.sm
-
-                                    Text {
-                                        text: "Custom prompt"
-                                        color: Color.foreground
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.display
-                                        font.bold: true
-                                        Accessible.role: Accessible.Heading
-                                        Accessible.name: text
-                                    }
-                                    Text {
-                                        width: parent.width
-                                        text: "Tell the model how to clean your dictation. The dictionary is appended automatically when a refinement runs."
-                                        color: Qt.darker(Color.foreground, 1.4)
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.bodySmall
-                                        wrapMode: Text.WordWrap
-                                    }
+                                PrismPageHeader {
+                                    Layout.fillWidth: true
+                                    title: "Custom prompt"
+                                    description: "Tell the model how to clean your dictation. Dictionary entries are appended automatically."
                                 }
 
-                                Ui.BorderSurface {
-                                    width: parent.width
-                                    height: Style.space(66)
-                                    color: Style.normalFillFor(Color.foreground, Color.accent)
-                                    borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
-                                    radius: Style.cornerRadius
+                                PrismSection {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    contentPadding: Style.space(14)
 
-                                    Row {
-                                        anchors.fill: parent
-                                        anchors.margins: Style.spacing.rowPaddingX
+                                    RowLayout {
+                                        Layout.fillWidth: true
                                         spacing: Style.spacing.controlGap
 
-                                        Text {
-                                            text: "󰭹"
-                                            color: Color.accent
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            font.family: Style.font.family
-                                            font.pixelSize: Style.font.iconLarge
-                                        }
-
-                                        Column {
-                                            width: parent.width - x
-                                            anchors.verticalCenter: parent.verticalCenter
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
                                             spacing: Style.spacing.xs
+
                                             Text {
-                                                text: "Keep the instruction narrow"
+                                                text: "System prompt"
                                                 color: Color.foreground
                                                 font.family: Style.font.family
-                                                font.pixelSize: Style.font.bodySmall
+                                                font.pixelSize: Style.font.subtitle
                                                 font.bold: true
                                             }
+
                                             Text {
-                                                width: parent.width
-                                                text: "Ask for corrections without adding facts, commentary, Markdown, or a new tone."
-                                                color: Qt.darker(Color.foreground, 1.5)
+                                                Layout.fillWidth: true
+                                                text: "Keep corrections narrow: preserve meaning and tone without adding facts, commentary, or Markdown."
+                                                color: Qt.darker(Color.foreground, 1.25)
                                                 font.family: Style.font.family
                                                 font.pixelSize: Style.font.caption
                                                 wrapMode: Text.WordWrap
                                             }
                                         }
-                                    }
-                                }
-
-                                Text {
-                                    text: "System prompt"
-                                    color: Color.foreground
-                                    font.family: Style.font.family
-                                    font.pixelSize: Style.font.subtitle
-                                    font.bold: true
-                                }
-
-                                PrismTextArea {
-                                    id: promptEditor
-                                    width: parent.width
-                                    height: parent.height - y - promptActions.height - parent.spacing
-                                    text: root.refinePrompt
-                                    placeholderText: "Describe how the model should refine speech-to-text…"
-                                    accessibleName: "Custom refinement system prompt"
-                                    accessibleDescription: "Saved to your Voxtype refine prompt file"
-                                    maximumLength: 32768
-                                    maximumBytes: 32768
-                                    showCount: true
-                                    hasError: root.promptTooLarge
-                                    onEdited: root.refinePrompt = text
-                                }
-
-                                Row {
-                                    id: promptActions
-                                    width: parent.width
-                                    spacing: Style.spacing.controlGap
-
-                                    Text {
-                                        width: Math.max(0, parent.width - testPromptButton.width)
-                                        text: "Stored locally in ~/.config/voxtype/refine-prompt.md"
-                                        color: Qt.darker(Color.foreground, 1.55)
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.caption
-                                        elide: Text.ElideMiddle
-                                    }
 
                                     Ui.Button {
                                         id: testPromptButton
-                                        text: "Test this prompt"
-                                        iconText: "󰑐"
+                                        text: "Try in Refinement"
                                         focusable: true
                                         bordered: true
                                         onClicked: {
@@ -1074,164 +945,200 @@ Item {
                                         }
                                     }
                                 }
+
+                                    PrismTextArea {
+                                        id: promptEditor
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        Layout.minimumHeight: Style.space(260)
+                                        text: root.refinePrompt
+                                        placeholderText: "Describe how the model should refine speech-to-text…"
+                                        accessibleName: "Custom refinement system prompt"
+                                        accessibleDescription: "Saved to your Voxtype refine prompt file"
+                                        maximumLength: 32768
+                                        maximumBytes: 32768
+                                        showCount: root.promptBytes >= 28672
+                                        hasError: root.promptTooLarge
+                                        onEdited: root.refinePrompt = text
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Local file · ~/.config/voxtype/refine-prompt.md"
+                                        color: Qt.darker(Color.foreground, 1.25)
+                                        font.family: Style.font.family
+                                        font.pixelSize: Style.font.caption
+                                        elide: Text.ElideMiddle
+                                    }
+                                }
                             }
                         }
 
                         // -------------------------------------------------- Dictionary
-                        Item {
+                        Flickable {
                             id: dictionaryPage
+                            clip: true
+                            contentWidth: width
+                            contentHeight: dictionaryContent.height
+                            boundsBehavior: Flickable.StopAtBounds
+                            QQC.ScrollBar.vertical: QQC.ScrollBar { policy: QQC.ScrollBar.AsNeeded }
 
-                            Column {
-                                anchors.fill: parent
-                                spacing: Style.space(18)
+                            ColumnLayout {
+                                id: dictionaryContent
+                                width: dictionaryPage.width
+                                height: Math.max(dictionaryPage.height, implicitHeight)
+                                spacing: Style.space(14)
 
-                                Column {
-                                    width: parent.width
-                                    spacing: Style.spacing.sm
-
-                                    Text {
-                                        text: "Custom dictionary"
-                                        color: Color.foreground
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.display
-                                        font.bold: true
-                                        Accessible.role: Accessible.Heading
-                                        Accessible.name: text
-                                    }
-                                    Text {
-                                        width: parent.width
-                                        text: "Teach refinement your names, technical terms, and preferred spellings. One entry per line."
-                                        color: Qt.darker(Color.foreground, 1.4)
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.bodySmall
-                                        wrapMode: Text.WordWrap
-                                    }
+                                PrismPageHeader {
+                                    Layout.fillWidth: true
+                                    title: "Custom dictionary"
+                                    description: "Teach refinement names, technical terms, and preferred spellings."
                                 }
 
-                                Row {
-                                    width: parent.width
-                                    height: parent.height - y
+                                RowLayout {
+                                    id: dictionaryLayout
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
                                     spacing: Style.space(20)
 
-                                    Column {
-                                        width: parent.width * 0.66
-                                        height: parent.height
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        Layout.minimumWidth: Style.space(320)
                                         spacing: Style.spacing.md
 
+                                        RowLayout {
+                                            Layout.fillWidth: true
+
+                                            Text {
+                                                text: "Dictionary entries"
+                                                color: Color.foreground
+                                                font.family: Style.font.family
+                                                font.pixelSize: Style.font.subtitle
+                                                font.bold: true
+                                            }
+
+                                            Item { Layout.fillWidth: true }
+
+                                            Text {
+                                                visible: dictionaryFormatGuide.visible
+                                                text: "One entry per line"
+                                                color: Qt.darker(Color.foreground, 1.25)
+                                                font.family: Style.font.family
+                                                font.pixelSize: Style.font.caption
+                                            }
+                                        }
+
                                         Text {
-                                            text: "Preferred terms"
-                                            color: Color.foreground
+                                            Layout.fillWidth: true
+                                            visible: !dictionaryFormatGuide.visible
+                                            text: "One entry per line · Hyprland · quick shell → Quickshell · # comments are ignored"
+                                            color: Qt.darker(Color.foreground, 1.25)
                                             font.family: Style.font.family
-                                            font.pixelSize: Style.font.subtitle
-                                            font.bold: true
+                                            font.pixelSize: Style.font.caption
+                                            wrapMode: Text.WordWrap
                                         }
 
                                         PrismTextArea {
                                             id: dictionaryEditor
-                                            width: parent.width
-                                            height: parent.height - y - dictionaryLocation.height - parent.spacing
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            Layout.minimumHeight: Style.space(280)
                                             text: root.refineDictionary
                                             placeholderText: "Hyprland\nQuickshell\nvox type → Voxtype"
                                             accessibleName: "Custom refinement dictionary"
                                             accessibleDescription: "One preferred spelling or mapping per line"
                                             maximumLength: 32768
                                             maximumBytes: 32768
-                                            showCount: true
+                                            showCount: root.dictionaryBytes >= 28672
                                             hasError: root.dictionaryTooLarge
                                             onEdited: root.refineDictionary = text
                                         }
 
                                         Text {
                                             id: dictionaryLocation
-                                            width: parent.width
-                                            text: "Stored locally in ~/.config/voxtype/refine-dictionary.md"
-                                            color: Qt.darker(Color.foreground, 1.55)
+                                            Layout.fillWidth: true
+                                            text: "Local file · ~/.config/voxtype/refine-dictionary.md"
+                                            color: Qt.darker(Color.foreground, 1.25)
                                             font.family: Style.font.family
                                             font.pixelSize: Style.font.caption
                                             elide: Text.ElideMiddle
                                         }
                                     }
 
-                                    Ui.BorderSurface {
-                                        width: parent.width - x
-                                        height: parent.height
-                                        color: Style.normalFillFor(Color.foreground, Color.accent)
-                                        borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
-                                        radius: Style.cornerRadius
+                                    PrismSection {
+                                        id: dictionaryFormatGuide
+                                        visible: dictionaryPage.width >= Style.space(720)
+                                        Layout.alignment: Qt.AlignTop
+                                        Layout.preferredWidth: Style.space(270)
+                                        Layout.minimumWidth: Style.space(230)
+                                        Layout.maximumWidth: Style.space(300)
+                                        contentPadding: Style.space(16)
 
-                                        Column {
-                                            anchors.fill: parent
-                                            anchors.margins: Style.spacing.panelPadding
-                                            spacing: Style.space(16)
+                                        Text {
+                                            text: "Format guide"
+                                            color: Color.foreground
+                                            font.family: Style.font.family
+                                            font.pixelSize: Style.font.subtitle
+                                            font.bold: true
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Use a preferred spelling by itself, or map what Prism hears to what it should write."
+                                            color: Qt.darker(Color.foreground, 1.25)
+                                            font.family: Style.font.family
+                                            font.pixelSize: Style.font.bodySmall
+                                            wrapMode: Text.WordWrap
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: Style.spacing.sm
 
                                             Text {
-                                                text: "Dictionary format"
-                                                color: Color.foreground
+                                                text: "PREFERRED SPELLING"
+                                                color: Qt.darker(Color.foreground, 1.25)
                                                 font.family: Style.font.family
-                                                font.pixelSize: Style.font.heading
+                                                font.pixelSize: Style.font.caption
                                                 font.bold: true
                                             }
 
                                             Text {
-                                                width: parent.width
-                                                text: "Use a preferred spelling by itself:"
-                                                color: Qt.darker(Color.foreground, 1.4)
+                                                text: "Hyprland"
+                                                color: Color.accent
                                                 font.family: Style.font.family
-                                                font.pixelSize: Style.font.bodySmall
-                                                wrapMode: Text.WordWrap
+                                                font.pixelSize: Style.font.body
                                             }
+                                        }
 
-                                            Ui.BorderSurface {
-                                                width: parent.width
-                                                height: Style.space(46)
-                                                color: Color.background
-                                                borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
-                                                radius: Style.cornerRadius
-                                                Text {
-                                                    anchors.left: parent.left
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    anchors.leftMargin: Style.spacing.controlPaddingX
-                                                    text: "Hyprland"
-                                                    color: Color.accent
-                                                    font.family: Style.font.family
-                                                    font.pixelSize: Style.font.body
-                                                }
-                                            }
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: Style.spacing.sm
 
                                             Text {
-                                                width: parent.width
-                                                text: "Or map the way a term sounds to the way it should be written:"
-                                                color: Qt.darker(Color.foreground, 1.4)
-                                                font.family: Style.font.family
-                                                font.pixelSize: Style.font.bodySmall
-                                                wrapMode: Text.WordWrap
-                                            }
-
-                                            Ui.BorderSurface {
-                                                width: parent.width
-                                                height: Style.space(46)
-                                                color: Color.background
-                                                borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
-                                                radius: Style.cornerRadius
-                                                Text {
-                                                    anchors.left: parent.left
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                    anchors.leftMargin: Style.spacing.controlPaddingX
-                                                    text: "quick shell → Quickshell"
-                                                    color: Color.accent
-                                                    font.family: Style.font.family
-                                                    font.pixelSize: Style.font.body
-                                                }
-                                            }
-
-                                            Text {
-                                                width: parent.width
-                                                text: "Blank lines and lines beginning with # are ignored. Entries are appended to your prompt only when refinement runs."
-                                                color: Qt.darker(Color.foreground, 1.5)
+                                                text: "SPOKEN  →  WRITTEN"
+                                                color: Qt.darker(Color.foreground, 1.25)
                                                 font.family: Style.font.family
                                                 font.pixelSize: Style.font.caption
-                                                wrapMode: Text.WordWrap
+                                                font.bold: true
                                             }
+
+                                            Text {
+                                                text: "quick shell  →  Quickshell"
+                                                color: Color.accent
+                                                font.family: Style.font.family
+                                                font.pixelSize: Style.font.body
+                                            }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Blank lines and # comments are ignored."
+                                            color: Qt.darker(Color.foreground, 1.25)
+                                            font.family: Style.font.family
+                                            font.pixelSize: Style.font.caption
+                                            wrapMode: Text.WordWrap
                                         }
                                     }
                                 }
@@ -1239,152 +1146,78 @@ Item {
                         }
 
                         // -------------------------------------------------- Indicator
-                        Item {
+                        Flickable {
                             id: indicatorPage
+                            clip: true
+                            contentWidth: width
+                            contentHeight: indicatorContent.height
+                            boundsBehavior: Flickable.StopAtBounds
+                            QQC.ScrollBar.vertical: QQC.ScrollBar { policy: QQC.ScrollBar.AsNeeded }
 
-                            Column {
-                                anchors.fill: parent
-                                spacing: Style.space(16)
+                            ColumnLayout {
+                                id: indicatorContent
+                                width: indicatorPage.width
+                                height: Math.max(indicatorPage.height, implicitHeight)
+                                spacing: Style.space(14)
 
-                                Column {
-                                    width: parent.width
-                                    spacing: Style.spacing.sm
-
-                                    Text {
-                                        text: "Indicator"
-                                        color: Color.foreground
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.display
-                                        font.bold: true
-                                        Accessible.role: Accessible.Heading
-                                        Accessible.name: text
-                                    }
-                                    Text {
-                                        width: parent.width
-                                        text: "Choose how Prism communicates recording and refinement without changing Voxtype itself."
-                                        color: Qt.darker(Color.foreground, 1.4)
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.bodySmall
-                                        wrapMode: Text.WordWrap
-                                    }
+                                PrismPageHeader {
+                                    Layout.fillWidth: true
+                                    title: "Indicator"
+                                    description: "Choose how Prism communicates listening, streaming, processing, and completion."
                                 }
 
-                                Ui.BorderSurface {
+                                PrismSection {
                                     id: indicatorPreviewCard
-                                    width: parent.width
-                                    height: Math.max(Style.space(190), parent.height * 0.38)
-                                    color: Color.popups.background
-                                    borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
-                                    radius: Style.cornerRadius
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: Math.max(Style.space(145),
+                                        Math.min(Style.space(180), Math.round(indicatorPage.height * 0.32)))
+                                    Layout.minimumHeight: Style.space(145)
+                                    contentPadding: Style.space(14)
                                     Accessible.role: Accessible.StaticText
                                     Accessible.name: root.titleCase(root.indicatorPreset)
                                         + " indicator preview in " + root.phaseLabel(root.previewPhase) + " state"
 
-                                    Text {
-                                        anchors.left: parent.left
-                                        anchors.top: parent.top
-                                        anchors.margins: Style.spacing.rowPaddingX
-                                        text: "LIVE PREVIEW · " + root.phaseLabel(root.previewPhase).toUpperCase()
-                                        color: Qt.darker(Color.foreground, 1.45)
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.caption
-                                        font.letterSpacing: 0.8
-                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: Style.spacing.controlGap
 
-                                    Loader {
-                                        id: indicatorVisualLoader
-                                        anchors.centerIn: parent
-                                        source: Qt.resolvedUrl("IndicatorVisual.qml")
-                                    }
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: Style.spacing.xs
 
-                                    Binding {
-                                        target: indicatorVisualLoader.item
-                                        property: "styleId"
-                                        value: root.indicatorPreset
-                                        when: indicatorVisualLoader.status === Loader.Ready
-                                    }
-                                    Binding {
-                                        target: indicatorVisualLoader.item
-                                        property: "phase"
-                                        value: root.previewPhase
-                                        when: indicatorVisualLoader.status === Loader.Ready
-                                    }
-                                    Binding {
-                                        target: indicatorVisualLoader.item
-                                        property: "levels"
-                                        value: root.previewLevels
-                                        when: indicatorVisualLoader.status === Loader.Ready
-                                    }
-                                    Binding {
-                                        target: indicatorVisualLoader.item
-                                        property: "themePalette"
-                                        value: root.indicatorPalette
-                                        when: indicatorVisualLoader.status === Loader.Ready
-                                    }
-                                    Binding {
-                                        target: indicatorVisualLoader.item
-                                        property: "scaleFactor"
-                                        value: root.indicatorScale
-                                        when: indicatorVisualLoader.status === Loader.Ready
-                                    }
-                                    Binding {
-                                        target: indicatorVisualLoader.item
-                                        property: "glowIntensity"
-                                        value: root.indicatorGlow
-                                        when: indicatorVisualLoader.status === Loader.Ready
-                                    }
-                                    Binding {
-                                        target: indicatorVisualLoader.item
-                                        property: "motionEnabled"
-                                        value: root.motionEnabled && root.indicatorMotion
-                                        when: indicatorVisualLoader.status === Loader.Ready
-                                    }
+                                            Text {
+                                                text: "Live preview"
+                                                color: Color.foreground
+                                                font.family: Style.font.family
+                                                font.pixelSize: Style.font.subtitle
+                                                font.bold: true
+                                            }
 
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: indicatorVisualLoader.status === Loader.Error
-                                        text: "Indicator preview unavailable"
-                                        color: Color.urgent
-                                        font.family: Style.font.family
-                                        font.pixelSize: Style.font.body
-                                    }
-                                }
+                                            Text {
+                                                text: root.titleCase(root.indicatorPreset) + " · "
+                                                    + root.titleCase(root.indicatorPosition)
+                                                color: Qt.darker(Color.foreground, 1.25)
+                                                font.family: Style.font.family
+                                                font.pixelSize: Style.font.caption
+                                            }
+                                        }
 
-                                Row {
-                                    width: parent.width
-                                    height: parent.height - y
-                                    spacing: Style.space(28)
-
-                                    Column {
-                                        width: (parent.width - parent.spacing) / 2
-                                        height: parent.height
-                                        spacing: Style.space(14)
-
-                                        Ui.Dropdown {
-                                            width: parent.width
-                                            label: "Indicator preset"
-                                            value: root.indicatorPreset
-                                            options: root.presetOptions
-                                            Accessible.name: "Indicator preset"
-                                            onChanged: function(value) { root.indicatorPreset = value }
+                                        Text {
+                                            text: "Preview state"
+                                            color: Color.foreground
+                                            font.family: Style.font.family
+                                            font.pixelSize: Style.font.caption
+                                            font.bold: true
                                         }
 
                                         Ui.Dropdown {
-                                            width: parent.width
-                                            label: "Screen position"
-                                            value: root.indicatorPosition
-                                            options: root.positionOptions
-                                            Accessible.name: "Indicator screen position"
-                                            onChanged: function(value) { root.indicatorPosition = value }
-                                        }
-
-                                        Ui.Dropdown {
-                                            width: parent.width
-                                            label: "Preview state"
+                                            Layout.preferredWidth: Style.space(190)
+                                            showLabel: false
                                             value: root.previewPhase
                                             options: [
                                                 { value: "recording", label: "Listening" },
-                                                { value: "transcribing", label: "Transcribing" },
+                                                { value: "streaming", label: "Streaming" },
+                                                { value: "transcribing", label: "Processing" },
                                                 { value: "ready", label: "Done" }
                                             ]
                                             Accessible.name: "Indicator preview state"
@@ -1392,13 +1225,123 @@ Item {
                                         }
                                     }
 
-                                    Column {
-                                        width: (parent.width - parent.spacing) / 2
-                                        height: parent.height
-                                        spacing: Style.space(16)
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+
+                                        Loader {
+                                            id: indicatorVisualLoader
+                                            anchors.centerIn: parent
+                                            source: Qt.resolvedUrl("IndicatorVisual.qml")
+                                        }
+
+                                        Binding {
+                                            target: indicatorVisualLoader.item
+                                            property: "styleId"
+                                            value: root.indicatorPreset
+                                            when: indicatorVisualLoader.status === Loader.Ready
+                                        }
+                                        Binding {
+                                            target: indicatorVisualLoader.item
+                                            property: "phase"
+                                            value: root.previewPhase
+                                            when: indicatorVisualLoader.status === Loader.Ready
+                                        }
+                                        Binding {
+                                            target: indicatorVisualLoader.item
+                                            property: "levels"
+                                            value: root.previewLevels
+                                            when: indicatorVisualLoader.status === Loader.Ready
+                                        }
+                                        Binding {
+                                            target: indicatorVisualLoader.item
+                                            property: "themePalette"
+                                            value: root.indicatorPalette
+                                            when: indicatorVisualLoader.status === Loader.Ready
+                                        }
+                                        Binding {
+                                            target: indicatorVisualLoader.item
+                                            property: "scaleFactor"
+                                            value: root.indicatorScale
+                                            when: indicatorVisualLoader.status === Loader.Ready
+                                        }
+                                        Binding {
+                                            target: indicatorVisualLoader.item
+                                            property: "glowIntensity"
+                                            value: root.indicatorGlow
+                                            when: indicatorVisualLoader.status === Loader.Ready
+                                        }
+                                        Binding {
+                                            target: indicatorVisualLoader.item
+                                            property: "motionEnabled"
+                                            value: root.motionEnabled && root.indicatorMotion
+                                            when: indicatorVisualLoader.status === Loader.Ready
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            visible: indicatorVisualLoader.status === Loader.Error
+                                            text: "Indicator preview unavailable"
+                                            color: Color.urgent
+                                            font.family: Style.font.family
+                                            font.pixelSize: Style.font.body
+                                        }
+                                    }
+                                }
+
+                                PrismSection {
+                                    Layout.fillWidth: true
+                                    contentPadding: Style.space(14)
+
+                                    Text {
+                                        text: "Indicator settings"
+                                        color: Color.foreground
+                                        font.family: Style.font.family
+                                        font.pixelSize: Style.font.subtitle
+                                        font.bold: true
+                                    }
+
+                                    GridLayout {
+                                        Layout.fillWidth: true
+                                        columns: 2
+                                        columnSpacing: Style.space(24)
+                                        rowSpacing: Style.space(14)
+
+                                        PrismFormField {
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
+                                            label: "Style"
+                                            helper: "Changes the indicator shape"
+
+                                            Ui.Dropdown {
+                                                Layout.fillWidth: true
+                                                showLabel: false
+                                                value: root.indicatorPreset
+                                                options: root.presetOptions
+                                                Accessible.name: "Indicator preset"
+                                                onChanged: function(value) { root.indicatorPreset = value }
+                                            }
+                                        }
+
+                                        PrismFormField {
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
+                                            label: "Screen position"
+                                            helper: "Placement on the focused monitor"
+
+                                            Ui.Dropdown {
+                                                Layout.fillWidth: true
+                                                showLabel: false
+                                                value: root.indicatorPosition
+                                                options: root.positionOptions
+                                                Accessible.name: "Indicator screen position"
+                                                onChanged: function(value) { root.indicatorPosition = value }
+                                            }
+                                        }
 
                                         SettingsSlider {
-                                            width: parent.width
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
                                             label: "Scale"
                                             accessibleName: "Indicator scale"
                                             from: root.rangeMin(root.scaleRange, 0.75)
@@ -1410,7 +1353,8 @@ Item {
                                         }
 
                                         SettingsSlider {
-                                            width: parent.width
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
                                             label: "Glow"
                                             accessibleName: "Indicator glow intensity"
                                             from: root.rangeMin(root.glowRange, 0)
@@ -1422,11 +1366,12 @@ Item {
                                         }
 
                                         Ui.Toggle {
-                                            width: parent.width
-                                            label: "Indicator motion"
+                                            Layout.fillWidth: true
+                                            Layout.columnSpan: 2
+                                            label: "Animate indicator"
                                             description: root.indicatorMotion
-                                                ? "Waveforms and phase changes animate"
-                                                : "Preview and live indicator remain still"
+                                                ? "Waveforms and state changes move in the preview and live indicator."
+                                                : "Preview and live indicator remain still."
                                             checked: root.indicatorMotion
                                             Accessible.name: "Indicator motion"
                                             Accessible.description: description
@@ -1443,8 +1388,8 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.bottom: actionFooter.top
-                        anchors.leftMargin: Style.space(42)
-                        anchors.rightMargin: Style.space(42)
+                        anchors.leftMargin: Style.space(40)
+                        anchors.rightMargin: Style.space(40)
                         height: visible
                             ? (backend.hasRevisionConflict ? Style.space(64) : Style.space(44)) : 0
                         visible: backend.hasRevisionConflict || backend.warningMessage !== ""
@@ -1521,8 +1466,8 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
-                        anchors.leftMargin: Style.space(42)
-                        anchors.rightMargin: Style.space(42)
+                        anchors.leftMargin: Style.space(40)
+                        anchors.rightMargin: Style.space(40)
                         height: Style.space(68)
 
                         Ui.PanelSeparator {
@@ -1532,28 +1477,44 @@ Item {
                             foreground: Color.foreground
                         }
 
-                        Row {
+                        RowLayout {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.topMargin: Style.spacing.md
                             spacing: Style.spacing.controlGap
 
+                            Text {
+                                Layout.fillWidth: true
+                                visible: mainArea.width >= Style.space(640)
+                                text: root.dirty ? "Unsaved changes" : "All changes saved"
+                                color: root.dirty ? Color.accent : Qt.darker(Color.foreground, 1.25)
+                                font.family: Style.font.family
+                                font.pixelSize: Style.font.caption
+                            }
+
                             Ui.Button {
-                                text: "Reset"
-                                tooltipText: "Discard unsaved changes"
+                                id: advancedButton
+                                text: mainArea.width < Style.space(600) ? ""
+                                    : (mainArea.width < Style.space(760)
+                                    ? "Advanced settings" : "Advanced Voxtype settings")
+                                iconText: "󰒓"
+                                tooltipText: "Close Prism and open the standard Voxtype configuration"
+                                focusable: true
+                                onClicked: root.requestClose("advanced")
+                                Accessible.name: "Open advanced Voxtype settings"
+                            }
+
+                            Ui.Button {
+                                text: mainArea.width < Style.space(720)
+                                    ? "Revert" : "Revert changes"
+                                tooltipText: "Revert to the last saved settings"
                                 focusable: true
                                 bordered: true
                                 enabled: root.dirty && !backend.busy
                                 opacity: enabled ? 1 : 0.45
                                 onClicked: root.syncDraft()
-                                Accessible.name: "Reset unsaved changes"
-                            }
-
-                            Item {
-                                width: Math.max(0, parent.width - x - saveButton.width
-                                    - advancedButton.width - parent.spacing * 2)
-                                height: 1
+                                Accessible.name: "Revert unsaved changes"
                             }
 
                             Ui.Button {
@@ -1565,23 +1526,14 @@ Item {
                                 tooltipText: "Save changes (Ctrl+S)"
                                 focusable: true
                                 bordered: true
-                                active: root.dirty
+                                selected: root.dirty
+                                foreground: root.dirty ? Color.accent : Color.foreground
+                                accent: Color.accent
                                 enabled: root.dirty && !backend.busy && root.draftWithinLimits
                                 opacity: enabled ? 1 : 0.5
                                 onClicked: root.saveChanges()
                                 Accessible.name: text
                                 Accessible.description: "Shortcut Ctrl+S"
-                            }
-
-                            Ui.Button {
-                                id: advancedButton
-                                text: mainArea.width < Style.space(760)
-                                    ? "Advanced settings" : "Advanced Voxtype settings"
-                                iconText: "󰒓"
-                                tooltipText: "Close Prism and open the standard Voxtype configuration"
-                                focusable: true
-                                onClicked: root.requestClose("advanced")
-                                Accessible.name: "Open advanced Voxtype settings"
                             }
                         }
                     }
@@ -1630,7 +1582,7 @@ Item {
                         width: parent.width
                         text: backend.loading ? "Reading a safe snapshot from the local helper…"
                             : backend.errorMessage
-                        color: backend.errorMessage ? Color.urgent : Qt.darker(Color.foreground, 1.45)
+                        color: backend.errorMessage ? Color.urgent : Qt.darker(Color.foreground, 1.25)
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
                         font.family: Style.font.family
@@ -1699,9 +1651,9 @@ Item {
                                 font.pixelSize: Style.font.heading
                                 font.bold: true
                             }
-                            Ui.PanelActionButton {
+                            PrismOpticalIconButton {
                                 id: closeShortcutsButton
-                                iconText: "󰅖"
+                                opticalIconText: "󰅖"
                                 tooltipText: "Close shortcuts"
                                 focusable: true
                                 onClicked: root.hideShortcuts()
@@ -1793,7 +1745,7 @@ Item {
                             text: root.pendingCloseAction === "advanced"
                                 ? "Advanced Voxtype settings opens in a separate app. Your Prism edits must be saved first or discarded."
                                 : "Your prompt, dictionary, provider, and indicator edits have not been saved."
-                            color: Qt.darker(Color.foreground, 1.4)
+                            color: Qt.darker(Color.foreground, 1.25)
                             font.family: Style.font.family
                             font.pixelSize: Style.font.bodySmall
                             wrapMode: Text.WordWrap

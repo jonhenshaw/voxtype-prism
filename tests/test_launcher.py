@@ -241,7 +241,33 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(command[:2], ["/fake/hyprctl", "eval"])
         self.assertIn("hl.window_rule", command[2])
         self.assertIn('title = "^(Voxtype Prism)$"', command[2])
+        self.assertIn('tag = "-default-opacity"', command[2])
+        self.assertIn('opacity = "1 1"', command[2])
         self.assertIn("size = { 1120, 760 }", command[2])
+
+    def test_window_rule_fallback_keeps_workbench_opaque(self) -> None:
+        subprocess = __import__("subprocess")
+
+        def run(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                1 if command[1] == "eval" else 0,
+                stdout="",
+                stderr="",
+            )
+
+        with patch.dict(os.environ, {"VOXTYPE_PRISM_HYPRCTL": "/fake/hyprctl"}), patch.object(
+            MODULE.subprocess, "run", side_effect=run
+        ) as runner:
+            MODULE.install_window_rule()
+
+        rules = [
+            call.args[0][3]
+            for call in runner.call_args_list
+            if call.args[0][1:3] == ["keyword", "windowrulev2"]
+        ]
+        self.assertIn("tag -default-opacity, title:^(Voxtype Prism)$", rules)
+        self.assertIn("opacity 1 1, title:^(Voxtype Prism)$", rules)
 
     def test_current_hyprland_dispatch_floats_sizes_and_centers_window(self) -> None:
         subprocess = __import__("subprocess")

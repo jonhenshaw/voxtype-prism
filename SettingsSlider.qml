@@ -26,7 +26,7 @@ Column {
         Text {
             width: parent.width - valueLabel.width
             text: root.label
-            color: Qt.darker(root.foreground, 1.35)
+            color: root.foreground
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
             font.bold: true

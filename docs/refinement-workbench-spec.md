@@ -1,4 +1,4 @@
-# Refinement Workbench v1.2
+# Refinement Workbench v1.3
 
 ## Product position
 
@@ -7,19 +7,30 @@ Voxtype. It does not duplicate Voxtype's engine, model, language, audio, hotkey,
 or output configuration surfaces. Those remain in Voxtype's packaged TUI and
 future upstream graphical settings panel.
 
-The selected visual truth is
-`docs/images/refinement-workbench-reference.png`.
-Production uses live Omarchy theme tokens rather than copying the mock's
-specific colors.
+The original Option 1 mock in `docs/images/refinement-workbench-reference.png`
+is retained only as design history. It was retired after live compositor review
+exposed contradictory hierarchy, inconsistent page layouts, low-contrast copy,
+and background bleed. Current visual truth is the rendered production set:
+
+- `docs/images/refinement-workbench-implementation.png`
+- `docs/images/refinement-workbench-prompt.png`
+- `docs/images/refinement-workbench-dictionary.png`
+- `docs/images/refinement-workbench-indicator-signal.png`
+
+Production uses live Omarchy theme tokens and shared page-header, form-field,
+section, editor, navigation, and slider primitives.
 
 ## Required experience
 
 1. **Refinement-first native window**
    - Normal keyboard-focusable Omarchy `FloatingWindow`, approximately
      1120 × 760, with an 18% left navigation rail.
-   - Refinement, Prompt, Dictionary, and Indicator destinations.
+   - Refinement, Prompt, Dictionary, and Indicator destinations with identical
+     page-header position, content margins, section rhythm, and footer actions.
+   - Fully opaque application and section backing; Prism opts out of Omarchy's
+     default window opacity so unrelated windows never bleed through editors.
    - Provider, effective model, credential readiness, enable state, raw input,
-     refined output, explicit test action, privacy disclosure, reset, save, and
+     refined output, explicit test action, privacy disclosure, revert, save, and
      advanced-settings handoff.
    - Loading, dirty, success, conflict, provider failure, and discard states.
 
@@ -35,6 +46,7 @@ specific colors.
    - Signal, Halo, and Bar Pulse are real runtime renderers, not placeholder
      names or mock-only thumbnails.
    - The panel preview and runtime surface reuse the same pure visual module.
+   - Listening, streaming, processing, and ready states can all be previewed.
    - Top/bottom placement, scale, motion, and glow are persisted through a
      versioned, allowlisted Prism-owned settings document.
    - Runtime surfaces remain click-through, reserve no screen space, and never
@@ -80,8 +92,14 @@ specific colors.
   Quick Shell desktop entry. The native Voxtype Configuration desktop ID still
   resolves to the packaged TUI.
 - Provider selection, raw/refined test, prompt/dictionary editing, all three
-  indicator previews, save/reset, keyboard navigation, and close/discard flows
+  indicator previews, save/revert, keyboard navigation, and close/discard flows
   are exercised.
+- All four pages are captured at 1120 × 760 and 900 × 620. Omarchy base fonts
+  up to 18px are captured as a separate reflow condition; pages scroll instead
+  of crossing the footer, and the Dictionary guide collapses into inline help
+  when its two-column form would no longer fit.
+- The launcher rule removes `default-opacity` and applies `opacity 1 1`; live
+  compositor evidence must show no background bleed.
 - Live Signal remains click-through and Voxtype dictation still completes.
-- A same-state screenshot is compared with the selected mock; all P0/P1/P2
-  design differences are fixed before handoff.
+- Independent visual-design, adversarial product, and user-style regression
+  reviews report no remaining P0/P1/P2 blockers before handoff.

@@ -49,8 +49,8 @@ Item {
         anchors.rightMargin: Style.spacing.rowPaddingX
         anchors.verticalCenter: parent.verticalCenter
         text: root.shortcutText
-        visible: text !== "" && !root.selected
-        color: Qt.darker(root.foreground, 1.6)
+        visible: text !== ""
+        color: root.selected ? root.accent : Qt.darker(root.foreground, 1.25)
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
     }

@@ -934,6 +934,65 @@ class SettingsBackendTests(unittest.TestCase):
             self.assertEqual(state["prior"]["assignment"], legacy_line)
             self.assertEqual(result["snapshot"]["settings"]["refine"]["hook"], "prism")
 
+    def test_exact_legacy_trampoline_to_identical_helper_copy_is_migrated(self) -> None:
+        with self.isolated() as (root, config):
+            old_helper = root / "old-checkout" / "scripts" / "voxtype-refine"
+            old_helper.parent.mkdir(parents=True)
+            old_helper.write_bytes(Path(MODULE.refine_command()).read_bytes())
+            wrapper = MODULE.legacy_trampoline_path()
+            wrapper.write_text(
+                '#!/usr/bin/python3\n'
+                '"""Voxtype post-process trampoline into Voxtype Prism.\n"""\n'
+                'from pathlib import Path\n'
+                'import runpy\n\n'
+                'runpy.run_path(\n'
+                f'    str(Path({json.dumps(str(old_helper))})),\n'
+                '    run_name="__main__",\n'
+                ')\n',
+                encoding="utf-8",
+            )
+            legacy_line = f'command = {json.dumps(str(wrapper))}\n'
+            config.write_text(
+                f'[output.post_process]\n{legacy_line}timeout_ms = 30000\n',
+                encoding="utf-8",
+            )
+
+            before = MODULE.snapshot()
+            self.assertTrue(before["settings"]["refine"]["enabled"])
+            self.assertEqual(before["settings"]["refine"]["hook"], "legacy-prism")
+            result = MODULE.apply_request(
+                self.request({"refine": {"enabled": True}}, before["revision"]),
+                RecordingRunner(),
+            )
+
+            self.assertIn(
+                f'command = {json.dumps(MODULE.refine_command())}',
+                config.read_text(encoding="utf-8"),
+            )
+            self.assertEqual(result["snapshot"]["settings"]["refine"]["hook"], "prism")
+
+    def test_exact_legacy_trampoline_to_modified_helper_remains_foreign(self) -> None:
+        with self.isolated() as (root, config):
+            old_helper = root / "old-checkout" / "scripts" / "voxtype-refine"
+            old_helper.parent.mkdir(parents=True)
+            old_helper.write_text("#!/usr/bin/python3\nprint('not Prism')\n", encoding="utf-8")
+            wrapper = MODULE.legacy_trampoline_path()
+            wrapper.write_text(
+                'from pathlib import Path\n'
+                'import runpy\n'
+                'runpy.run_path(\n'
+                f'    str(Path({json.dumps(str(old_helper))})),\n'
+                '    run_name="__main__",\n'
+                ')\n',
+                encoding="utf-8",
+            )
+            config.write_text(
+                f'[output.post_process]\ncommand = {json.dumps(str(wrapper))}\n',
+                encoding="utf-8",
+            )
+
+            self.assertEqual(MODULE.snapshot()["settings"]["refine"]["hook"], "foreign")
+
     def test_unknown_wrapper_remains_foreign(self) -> None:
         with self.isolated() as (_root, config):
             wrapper = MODULE.legacy_trampoline_path()

@@ -162,6 +162,17 @@ to the system prompt. Blank lines and `#` comments are ignored. Edit that file
 or run `scripts/voxtype-refine edit-dictionary`. Changes apply on the next
 dictation; no Voxtype restart.
 
+Fresh dictionaries start with three Omarchy-friendly speech mappings:
+
+```text
+OH-MAH-CHI -> Omarchy
+HERDER -> herdr
+Hyper Land -> Hyprland
+```
+
+Prism creates this default only when the dictionary file is missing. It never
+replaces or merges into an existing user dictionary.
+
 
 
 
