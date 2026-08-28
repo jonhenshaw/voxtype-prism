@@ -89,7 +89,8 @@ The workbench deliberately owns only Prism's enhancement layer:
 
 - **Refinement** — enable the Voxtype post-process hook, choose a provider,
   inspect readiness, and compare raw text with an explicitly requested test.
-- **Prompt** — edit the system instructions with a 32 KiB limit.
+- **Prompt** — tune editing preferences with a 32 KiB limit; Prism keeps the
+  transcript-only contract immutable.
 - **Dictionary** — keep preferred spellings and spoken-to-written mappings.
 - **Indicator** — preview and select Signal, Halo, or Bar Pulse; choose top or
   bottom placement, scale, motion, and glow.
@@ -154,13 +155,15 @@ the narrow `[output.post_process].command` integration. It recognizes the
 earlier `~/.config/voxtype/llm-refine.py` Prism trampoline for migration, but
 never overwrites an unknown post-process command.
 
-The system prompt is `~/.config/voxtype/refine-prompt.md`. Edit that file or run
-`scripts/voxtype-refine edit-prompt`.
+Editing preferences live in `~/.config/voxtype/refine-prompt.md`. Edit that file
+or run `scripts/voxtype-refine edit-prompt`. Run `scripts/voxtype-refine prompt`
+to inspect the complete system prompt, including Prism's immutable contract.
 
-The dictionary is `~/.config/voxtype/refine-dictionary.md`. Terms are appended
-to the system prompt. Blank lines and `#` comments are ignored. Edit that file
-or run `scripts/voxtype-refine edit-dictionary`. Changes apply on the next
-dictation; no Voxtype restart.
+The dictionary is `~/.config/voxtype/refine-dictionary.md`. Terms are encoded as
+lexical reference data, separate from instructions, and used only when the
+transcript supports a match. Blank lines and `#` comments are ignored. Edit
+that file or run `scripts/voxtype-refine edit-dictionary`. Changes apply on the
+next dictation; no Voxtype restart.
 
 Fresh dictionaries start with three Omarchy-friendly speech mappings:
 
@@ -201,8 +204,10 @@ values to QML.
   headers never cross the helper interface.
 - `scripts/voxtype-refine` is the only network path. Remote providers receive
   the current transcript and, when Voxtype supplies it, recent dictation
-  context. Provider responses and requests are bounded. Saving ordinary
-  settings never performs a network test.
+  context. Transcript, context, and preferred spellings are JSON-encoded as
+  data; the system contract requires questions and requests to remain dictated
+  text rather than being answered. Provider responses and requests are bounded.
+  Saving ordinary settings never performs a network test.
 - The separate Quick Shell desktop entry is installed only when its target is
   absent or already carries Prism's ownership marker. Concurrent or foreign
   entries are preserved. Migration removes only the earlier Prism-marked
@@ -214,6 +219,8 @@ values to QML.
 
 ```bash
 python3 -m unittest discover -s tests -v
+# Explicit network test with synthetic fixtures; also accepts anthropic, openai, or local.
+VOXTYPE_LIVE_REFINE_PROVIDER=grok python3 -m unittest discover -s tests -p 'test_refine_live.py' -v
 omarchy plugin validate .
 tests/qml-lint.sh
 tests/workbench-smoke.sh
@@ -224,6 +231,8 @@ git diff --check
 See [ARCHITECTURE.md](ARCHITECTURE.md) for lifecycle and failure boundaries,
 [design-qa.md](design-qa.md) for the Refinement Workbench comparison, and
 [docs/design-qa.md](docs/design-qa.md) for the runtime indicator comparison.
+The primary-source prompt survey and adversarial corpus rationale are in
+[docs/refinement-prompt-research.md](docs/refinement-prompt-research.md).
 
 ## License and attribution
 

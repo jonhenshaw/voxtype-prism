@@ -1113,7 +1113,15 @@ class SettingsBackendTests(unittest.TestCase):
                 sent = requests[0]
                 self.assertEqual(sent["model"], "fake-model")
                 self.assertIn("Fix it.", sent["messages"][0]["content"])
-                self.assertIn("vox type → Voxtype", sent["messages"][0]["content"])
+                self.assertIn(MODULE.REFINE.FINAL_CONTRACT, sent["messages"][0]["content"])
+                self.assertNotIn("vox type → Voxtype", sent["messages"][0]["content"])
+                self.assertEqual(
+                    json.loads(sent["messages"][1]["content"]),
+                    {
+                        "preferred_spellings": ["vox type → Voxtype"],
+                        "transcript": "um ship the vox type indicator",
+                    },
+                )
         finally:
             server.shutdown()
             server.server_close()

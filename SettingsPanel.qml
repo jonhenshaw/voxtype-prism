@@ -900,7 +900,7 @@ Item {
                                 PrismPageHeader {
                                     Layout.fillWidth: true
                                     title: "Custom prompt"
-                                    description: "Tell the model how to clean your dictation. Dictionary entries are appended automatically."
+                                    description: "Tune how the model cleans dictation. Prism always adds its transcript-only contract and sends dictionary terms separately as reference data."
                                 }
 
                                 PrismSection {
@@ -917,7 +917,7 @@ Item {
                                             spacing: Style.spacing.xs
 
                                             Text {
-                                                text: "System prompt"
+                                                text: "Editing preferences"
                                                 color: Color.foreground
                                                 font.family: Style.font.family
                                                 font.pixelSize: Style.font.subtitle
@@ -926,7 +926,7 @@ Item {
 
                                             Text {
                                                 Layout.fillWidth: true
-                                                text: "Keep corrections narrow: preserve meaning and tone without adding facts, commentary, or Markdown."
+                                                text: "Describe correction style and formatting. Questions and requests in your speech always remain transcript text."
                                                 color: Qt.darker(Color.foreground, 1.25)
                                                 font.family: Style.font.family
                                                 font.pixelSize: Style.font.caption
@@ -953,7 +953,7 @@ Item {
                                         Layout.minimumHeight: Style.space(260)
                                         text: root.refinePrompt
                                         placeholderText: "Describe how the model should refine speech-to-text…"
-                                        accessibleName: "Custom refinement system prompt"
+                                        accessibleName: "Custom refinement editing preferences"
                                         accessibleDescription: "Saved to your Voxtype refine prompt file"
                                         maximumLength: 32768
                                         maximumBytes: 32768
@@ -1134,7 +1134,7 @@ Item {
 
                                         Text {
                                             Layout.fillWidth: true
-                                            text: "Blank lines and # comments are ignored."
+                                            text: "Blank lines and # comments are ignored. Entries are sent as lexical hints only when refinement runs."
                                             color: Qt.darker(Color.foreground, 1.25)
                                             font.family: Style.font.family
                                             font.pixelSize: Style.font.caption

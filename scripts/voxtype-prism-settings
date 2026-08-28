@@ -1365,11 +1365,11 @@ def test_refine_request(request: Any) -> dict[str, Any]:
         output = REFINE.complete(
             provider,
             candidate["model"],
-            sample,
-            REFINE.compose_system_prompt(
-                candidate["prompt"],
-                REFINE.dictionary_terms(candidate["dictionary"]),
+            REFINE.build_refinement_input(
+                sample,
+                dictionary=REFINE.dictionary_terms(candidate["dictionary"]),
             ),
+            REFINE.compose_system_prompt(candidate["prompt"]),
         )
     except (OSError, RuntimeError, TimeoutError, json.JSONDecodeError) as error:
         # Do not echo arbitrary provider messages: they may contain request
