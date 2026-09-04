@@ -44,10 +44,17 @@ scripts/voxtype-prism-settings
 
 scripts/voxtype-refine
   ├─ Voxtype post-process child (stdin → stdout)
-  ├─ reads ~/.config/voxtype/refine.toml for grok|anthropic|openai|local
-  ├─ reads the complete user-owned system prompt without hidden instructions
-  ├─ JSON-encodes transcript, prior context, and dictionary terms as data
-  └─ uses OhMyPi ~/.omp/agent/agent.db; never enters QML
+  ├─ reads ~/.config/voxtype/refine.toml for grok|anthropic|openai|local|s1mini and optional screen_context
+  ├─ reads the complete user-owned system prompt without hidden instructions (ignored for s1mini)
+  ├─ JSON-encodes transcript, prior context, dictionary terms, and optional live on_screen_spellings as data for chat providers
+  ├─ 5-minute recency cache feeds the local joiner / s1mini lexical pre-pass only, not Grok
+  ├─ s1mini uses Superwhisper's control-line format plus a local near-miss respell of dictionary/on-screen terms
+  ├─ all providers get that near-miss respell on the model output so on-screen identifiers survive split ASR
+  ├─ when screen_context is true, OCRs the focused Hyprland window locally; QML sees only the boolean
+  ├─ lock/greeter class, missing tools, or capture/OCR failure return no live screen spellings
+  ├─ successful refine appends a 0600 jsonl take log (default: folds, no transcripts)
+  ├─ harvest-evals writes tests/fixtures/refinement-eval.inbox.json in a work repo; never the product corpus or plugin tree
+  └─ uses OhMyPi ~/.omp/agent/agent.db; never enters QML. test-refine never live-captures
 ```
 
 ## Why the built-in Voxtype OSD is disabled
@@ -134,6 +141,8 @@ snapshots and saves are local operations.
   remains unchanged.
 - Provider or test failure: the explicit test reports a redacted error; normal
   Voxtype post-processing retains upstream raw-transcript fallback behavior.
+- Focused-window capture/OCR failure, missing grim/tesseract, lock/greeter class, or timeout: no live `on_screen_spellings` for the provider JSON; a still-valid recency cache may feed the local joiner. Refinement continues with the raw-transcript fallback on hook failure.
+- `test-refine` never live-captures the screen; optional fixture terms are request-local.
 - Launcher conflict: a foreign `voxtype-prism.desktop` is preserved. Migration
   removes only an older Prism-marked configuration override, so Voxtype's
   packaged settings launcher remains independently available.

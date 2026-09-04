@@ -1,0 +1,25 @@
+{
+  "id": "2026-09-03-code-identifier-evals",
+  "date": "2026-09-03",
+  "status": "complete",
+  "question": "Do on-screen spellings catch real code identifiers mined from local agent sessions, without inserting unspoken sibling terms?",
+  "corpus": "tests/fixtures/refinement-eval.json",
+  "harness": "tests/run_refinement_eval.py --only 'screen_code_*'",
+  "git_head": "4d0590a71cd57e15f81bf23070d48a0dfb11e90d",
+  "runs": [
+    {
+      "id": "grok",
+      "file": "runs/grok.json",
+      "provider": "grok",
+      "model": "grok-4.20-0309-non-reasoning",
+      "conditions": {"only": "screen_code_*"}
+    },
+    {
+      "id": "s1mini-lexical-on",
+      "file": "runs/s1mini-lexical-on.json",
+      "provider": "s1mini",
+      "model": "s1-mini",
+      "conditions": {"only": "screen_code_*", "lexical": true}
+    }
+  ]
+}

@@ -148,6 +148,7 @@ class SettingsBackendTests(unittest.TestCase):
             self.assertEqual(providers["anthropic"], "missing")
             self.assertEqual(providers["openai"], "missing")
             self.assertEqual(providers["local"], "ready")
+            self.assertEqual(providers["s1mini"], "ready")
             self.assertFalse(database.exists())
 
     def test_apply_omitted_fields_unchanged_and_writes_exact_indicator_schema(self) -> None:
@@ -1140,6 +1141,131 @@ class SettingsBackendTests(unittest.TestCase):
             self.assertEqual(payload["error"]["code"], "invalid_request")
             self.assertIn("message", payload["error"])
             self.assertEqual(process.stdout.count(b"\n"), 1)
+
+    def test_screen_context_defaults_false_and_reads_toml_true(self) -> None:
+        with self.isolated():
+            self.assertFalse(MODULE.snapshot()["settings"]["refine"]["screenContext"])
+            MODULE.REFINE.refine_config_path().write_text(
+                'provider = "grok"\nscreen_context = true\n',
+                encoding="utf-8",
+            )
+            self.assertTrue(MODULE.snapshot()["settings"]["refine"]["screenContext"])
+
+    def test_non_boolean_screen_context_toml_and_patch_are_rejected(self) -> None:
+        with self.isolated():
+            refine = MODULE.REFINE.refine_config_path()
+            for raw in ('screen_context = "true"\n', "screen_context = 1\n"):
+                refine.write_text(raw, encoding="utf-8")
+                with self.assertRaises(MODULE.SettingsError) as caught:
+                    MODULE.snapshot()
+                self.assertEqual(caught.exception.field, "refine.screenContext")
+            refine.write_text('provider = "grok"\n', encoding="utf-8")
+            with self.assertRaises(MODULE.SettingsError) as caught:
+                MODULE.apply_request(self.request({"refine": {"screenContext": "true"}}))
+            self.assertEqual(caught.exception.field, "refine.screenContext")
+
+    def test_screen_context_persist_keeps_comments_and_future_keys(self) -> None:
+        with self.isolated():
+            refine = MODULE.REFINE.refine_config_path()
+            refine.write_text(
+                '# keep me\nprovider = "grok"\nfuture = "yes"\n',
+                encoding="utf-8",
+            )
+            runner = RecordingRunner()
+            result = MODULE.apply_request(self.request({"refine": {"screenContext": True}}), runner)
+            text = refine.read_text(encoding="utf-8")
+            self.assertIn("# keep me", text)
+            self.assertIn('provider = "grok"', text)
+            self.assertIn('future = "yes"', text)
+            self.assertIn("screen_context = true", text)
+            self.assertNotIn('screen_context = "true"', text)
+            self.assertTrue(result["snapshot"]["settings"]["refine"]["screenContext"])
+            self.assertEqual(runner.commands, [])
+            self.assertFalse(result["restart"]["required"])
+
+    def test_stale_revision_rejects_screen_context_patch(self) -> None:
+        with self.isolated():
+            stale = MODULE.snapshot()["revision"]
+            MODULE.REFINE.prompt_path().write_text("concurrent\n", encoding="utf-8")
+            with self.assertRaises(MODULE.SettingsError) as caught:
+                MODULE.apply_request(self.request({"refine": {"screenContext": True}}, stale))
+            self.assertEqual(caught.exception.code, "revision_conflict")
+            self.assertFalse(MODULE.REFINE.refine_config_path().exists())
+
+    def test_test_refine_serializes_fixture_spellings_without_live_capture(self) -> None:
+        with self.isolated():
+            MODULE.REFINE.refine_config_path().write_text(
+                'provider = "local"\nscreen_context = true\n',
+                encoding="utf-8",
+            )
+            before = MODULE.snapshot()
+            self.assertTrue(before["settings"]["refine"]["screenContext"])
+            with patch.object(MODULE.REFINE, "collect_on_screen_spellings") as collect:
+                with patch.object(MODULE.REFINE, "complete", return_value="Use Hyprland.") as complete:
+                    result = MODULE.test_refine_request(
+                        {
+                            "protocol": 1,
+                            "expectedRevision": before["revision"],
+                            "sample": "use hyper land",
+                            "candidate": {"provider": "local"},
+                            "on_screen_spellings": ["Hyprland", "GB202"],
+                        }
+                    )
+            collect.assert_not_called()
+            complete.assert_called_once()
+            self.assertEqual(result["output"], "Use Hyprland.")
+            _provider, _model, user, _system = complete.call_args.args
+            self.assertEqual(
+                json.loads(user),
+                {
+                    "on_screen_spellings": ["Hyprland", "GB202"],
+                    "transcript": "use hyper land",
+                },
+            )
+
+    def test_test_refine_s1mini_uses_native_input(self) -> None:
+        with self.isolated():
+            MODULE.REFINE.refine_config_path().write_text(
+                'provider = "s1mini"\n',
+                encoding="utf-8",
+            )
+            before = MODULE.snapshot()
+            with patch.object(
+                MODULE.REFINE, "complete", return_value="I use Hyprland every day."
+            ) as complete:
+                result = MODULE.test_refine_request(
+                    {
+                        "protocol": 1,
+                        "expectedRevision": before["revision"],
+                        "sample": "I use hyper land every day.",
+                        "candidate": {"provider": "s1mini"},
+                        "on_screen_spellings": ["Hyprland"],
+                    }
+                )
+            _provider, _model, user, system = complete.call_args.args
+            self.assertEqual(result["provider"], "s1mini")
+            self.assertEqual(system, MODULE.REFINE.S1MINI_SYSTEM)
+            self.assertEqual(
+                user,
+                f"{MODULE.REFINE.S1MINI_CONTROL}\nI use Hyprland every day.",
+            )
+
+    def test_test_refine_rejects_oversized_on_screen_spellings(self) -> None:
+        with self.isolated():
+            current = MODULE.snapshot()
+            with patch.object(MODULE.REFINE, "complete") as complete:
+                with self.assertRaises(MODULE.SettingsError) as caught:
+                    MODULE.test_refine_request(
+                        {
+                            "protocol": 1,
+                            "expectedRevision": current["revision"],
+                            "sample": "hello",
+                            "on_screen_spellings": ["x" * 129],
+                        }
+                    )
+            self.assertEqual(caught.exception.field, "on_screen_spellings")
+            complete.assert_not_called()
+
 
 
 if __name__ == "__main__":

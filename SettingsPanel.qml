@@ -44,6 +44,9 @@ Item {
     property string refineModel: ""
     property string refinePrompt: ""
     property string refineDictionary: ""
+    property bool refineScreenContext: false
+    property alias screenContextToggle: screenContextToggleControl
+
 
     property string indicatorPreset: "signal"
     property string indicatorPosition: "bottom-center"
@@ -97,6 +100,7 @@ Item {
         || refineModel !== savedModelOverride
         || refinePrompt !== String(savedRefine.prompt || "")
         || refineDictionary !== String(savedRefine.dictionary || "")
+        || refineScreenContext !== Boolean(savedRefine.screenContext)
         || indicatorPreset !== String(savedIndicator.preset || "signal")
         || indicatorPosition !== String(savedIndicator.position || "bottom-center")
         || Math.abs(indicatorScale - finiteNumber(savedIndicator.scale, 1.0)) > 0.0001
@@ -252,6 +256,7 @@ Item {
         refineModel = refine.modelOverride ? String(refine.model || "") : ""
         refinePrompt = String(refine.prompt || "")
         refineDictionary = String(refine.dictionary || "")
+        refineScreenContext = Boolean(refine.screenContext)
         indicatorPreset = String(indicator.preset || "signal")
         indicatorPosition = String(indicator.position || "bottom-center")
         indicatorScale = finiteNumber(indicator.scale, 1.0)
@@ -273,7 +278,8 @@ Item {
                 provider: refineProvider,
                 model: refineModel,
                 prompt: refinePrompt,
-                dictionary: refineDictionary
+                dictionary: refineDictionary,
+                screenContext: refineScreenContext
             },
             indicator: {
                 preset: indicatorPreset,
@@ -324,6 +330,7 @@ Item {
         if (refine.model !== undefined) refineModel = String(refine.model)
         if (refine.prompt !== undefined) refinePrompt = String(refine.prompt)
         if (refine.dictionary !== undefined) refineDictionary = String(refine.dictionary)
+        if (refine.screenContext !== undefined) refineScreenContext = Boolean(refine.screenContext)
         if (indicator.preset !== undefined) indicatorPreset = String(indicator.preset)
         if (indicator.position !== undefined) indicatorPosition = String(indicator.position)
         if (indicator.scale !== undefined) indicatorScale = finiteNumber(indicator.scale, 1.0)
@@ -683,6 +690,18 @@ Item {
                                         onClicked: root.refineEnabled = !root.refineEnabled
                                     }
 
+                                    Ui.Toggle {
+                                        id: screenContextToggleControl
+                                        Layout.fillWidth: true
+                                        checked: root.refineScreenContext
+                                        enabled: root.refineEnabled
+                                        label: "Use on-screen words"
+                                        description: "Extracted words—not images—from the focused window go to the selected provider. Remote providers may retain them for about 30 days for abuse review even when they are not used for training."
+                                        Accessible.name: "Use on-screen words"
+                                        Accessible.description: description
+                                        onClicked: root.refineScreenContext = !root.refineScreenContext
+                                    }
+
                                     GridLayout {
                                         Layout.fillWidth: true
                                         columns: 2
@@ -759,7 +778,7 @@ Item {
 
                                             Text {
                                                 Layout.fillWidth: true
-                                                text: "Uses the unsaved provider, model, prompt, and dictionary. Testing does not save them."
+                                                text: "Uses the unsaved provider, model, prompt, and dictionary. Testing does not save them and never captures the screen."
                                                 color: Qt.darker(Color.foreground, 1.25)
                                                 font.family: Style.font.family
                                                 font.pixelSize: Style.font.caption

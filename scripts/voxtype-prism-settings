@@ -43,7 +43,7 @@ MAX_MODEL_BYTES = 512
 MAX_TEST_SAMPLE_BYTES = 4 * 1024
 MAX_TEST_OUTPUT_BYTES = 64 * 1024
 MAX_TRAMPOLINE_BYTES = 4 * 1024
-MAX_REFINE_HELPER_BYTES = 64 * 1024
+MAX_REFINE_HELPER_BYTES = 128 * 1024
 MAX_TRANSACTION_JOURNAL_BYTES = 256 * 1024
 TRANSACTION_JOURNAL_VERSION = 1
 
@@ -220,6 +220,28 @@ def _require_text_bytes(value: Any, field: str, limit: int) -> str:
     return value
 
 
+def _validate_on_screen_spellings(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        raise SettingsError("invalid_setting", "Expected a list of terms.", field="on_screen_spellings")
+    if len(value) > REFINE.MAX_ON_SCREEN_SPELLINGS:
+        raise SettingsError("invalid_setting", "Too many on-screen terms.", field="on_screen_spellings")
+    terms: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item:
+            raise SettingsError(
+                "invalid_setting",
+                "Each on-screen term must be nonempty text.",
+                field="on_screen_spellings",
+            )
+        if len(item) > REFINE.MAX_ON_SCREEN_SPELLING_CHARS:
+            raise SettingsError("invalid_setting", "An on-screen term is too long.", field="on_screen_spellings")
+        terms.append(item)
+    encoded = json.dumps(terms, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > REFINE.MAX_ON_SCREEN_SPELLINGS_JSON_BYTES:
+        raise SettingsError("invalid_setting", "On-screen terms exceed 4 KiB.", field="on_screen_spellings")
+    return terms
+
+
 def _require_number(value: Any, field: str, minimum: float, maximum: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise SettingsError("invalid_setting", "Expected a number.", field=field)
@@ -282,7 +304,7 @@ def serialize_indicator(settings: dict[str, Any]) -> str:
     return json.dumps(ordered, indent=2) + "\n"
 
 
-def selection_from_raw(raw: str | None) -> tuple[Any, str, bool]:
+def selection_from_raw(raw: str | None) -> tuple[Any, str, bool, bool]:
     try:
         parsed = tomllib.loads(raw or "")
     except tomllib.TOMLDecodeError as error:
@@ -298,7 +320,18 @@ def selection_from_raw(raw: str | None) -> tuple[Any, str, bool]:
     if not isinstance(model_value, str):
         raise SettingsError("invalid_setting", "Refine model must be text.", field="refine.model")
     model_override = model_value.strip()
-    return provider, model_override or provider.model, bool(model_override)
+    if "screen_context" not in parsed:
+        screen_context = False
+    else:
+        screen_value = parsed["screen_context"]
+        if not isinstance(screen_value, bool):
+            raise SettingsError(
+                "invalid_setting",
+                "Expected true or false.",
+                field="refine.screenContext",
+            )
+        screen_context = screen_value
+    return provider, model_override or provider.model, bool(model_override), screen_context
 
 
 def provider_readiness(provider: Any) -> str:
@@ -590,17 +623,20 @@ def _serialize_refine_config(
     raw: str | None,
     provider: str | object = ...,
     model: str | object = ...,
+    screen_context: bool | object = ...,
 ) -> str:
     text = raw or ""
     if provider is not ...:
         text = REFINE.set_top_level_string(text, "provider", str(provider))
     if model is not ...:
         text = REFINE.set_top_level_string(text, "model", str(model) if model else None)
+    if screen_context is not ...:
+        text = REFINE.set_top_level_bool(text, "screen_context", bool(screen_context))
     return text
 
 
 def _refine_snapshot(bundle: SourceBundle) -> dict[str, Any]:
-    provider, model, model_override = selection_from_raw(bundle.refine_config)
+    provider, model, model_override, screen_context = selection_from_raw(bundle.refine_config)
     hook = inspect_hook(bundle.voxtype_config)
     prompt = bundle.prompt if bundle.prompt is not None and bundle.prompt.strip() else REFINE.DEFAULT_SYSTEM
     dictionary = bundle.dictionary or ""
@@ -610,6 +646,7 @@ def _refine_snapshot(bundle: SourceBundle) -> dict[str, Any]:
         "provider": provider.id,
         "model": model,
         "modelOverride": model_override,
+        "screenContext": screen_context,
         "prompt": prompt,
         "dictionary": dictionary,
         "readiness": readiness,
@@ -690,7 +727,7 @@ def _merge_indicator(current: dict[str, Any], patch: Any) -> dict[str, Any]:
 def _validate_refine_patch(patch: Any) -> dict[str, Any]:
     if not isinstance(patch, dict):
         raise SettingsError("invalid_setting", "Refine patch must be an object.", field="refine")
-    allowed = {"enabled", "provider", "model", "prompt", "dictionary"}
+    allowed = {"enabled", "provider", "model", "prompt", "dictionary", "screenContext"}
     unknown = sorted(set(patch) - allowed)
     if unknown:
         raise SettingsError("invalid_setting", "Unsupported refine field.", field=f"refine.{unknown[0]}")
@@ -714,6 +751,10 @@ def _validate_refine_patch(patch: Any) -> dict[str, Any]:
             "refine.dictionary",
             REFINE.MAX_DICTIONARY_BYTES,
         )
+    if "screenContext" in patch:
+        if not isinstance(patch["screenContext"], bool):
+            raise SettingsError("invalid_setting", "Expected true or false.", field="refine.screenContext")
+        result["screenContext"] = patch["screenContext"]
     return result
 
 
@@ -1204,6 +1245,7 @@ def apply_request(
         bundle.refine_config,
         refine_patch.get("provider", ...),
         refine_patch.get("model", ...),
+        refine_patch.get("screenContext", ...),
     )
     prompt_updated = refine_patch.get("prompt", bundle.prompt)
     dictionary_updated = refine_patch.get("dictionary", bundle.dictionary)
@@ -1339,7 +1381,7 @@ def _candidate_refine(current: dict[str, Any], candidate: Any) -> dict[str, Any]
 def test_refine_request(request: Any) -> dict[str, Any]:
     recover_pending_transaction()
     request = _validate_protocol(request)
-    allowed = {"protocol", "expectedRevision", "sample", "candidate"}
+    allowed = {"protocol", "expectedRevision", "sample", "candidate", "on_screen_spellings"}
     unknown = sorted(set(request) - allowed)
     if unknown:
         raise SettingsError("invalid_request", "Request contains unsupported fields.", field=unknown[0])
@@ -1350,9 +1392,16 @@ def test_refine_request(request: Any) -> dict[str, Any]:
     if not sample.strip():
         raise SettingsError("invalid_setting", "Enter a sample to refine.", field="sample")
     candidate = _candidate_refine(current_snapshot["settings"]["refine"], request.get("candidate"))
+    on_screen_spellings = None
+    if "on_screen_spellings" in request:
+        on_screen_spellings = _validate_on_screen_spellings(request["on_screen_spellings"])
     provider = REFINE.PROVIDERS[candidate["provider"]]
     if provider.id == "local":
         override = os.environ.get("VOXTYPE_LOCAL_BASE_URL", "").strip()
+        if override:
+            provider = replace(provider, base_url=override)
+    elif provider.id == "s1mini":
+        override = os.environ.get("VOXTYPE_S1MINI_BASE_URL", "").strip()
         if override:
             provider = replace(provider, base_url=override)
 
@@ -1362,15 +1411,14 @@ def test_refine_request(request: Any) -> dict[str, Any]:
     _assert_sources_unchanged(bundle)
     started = time.monotonic()
     try:
-        output = REFINE.complete(
+        user, system = REFINE.build_provider_request(
             provider,
-            candidate["model"],
-            REFINE.build_refinement_input(
-                sample,
-                dictionary=REFINE.dictionary_terms(candidate["dictionary"]),
-            ),
-            REFINE.compose_system_prompt(candidate["prompt"]),
+            sample,
+            dictionary=REFINE.dictionary_terms(candidate["dictionary"]),
+            on_screen_spellings=on_screen_spellings,
+            system_prompt=candidate["prompt"],
         )
+        output = REFINE.complete(provider, candidate["model"], user, system)
     except (OSError, RuntimeError, TimeoutError, json.JSONDecodeError) as error:
         # Do not echo arbitrary provider messages: they may contain request
         # headers, transcript fragments, or OAuth material.

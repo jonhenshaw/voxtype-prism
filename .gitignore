@@ -1,3 +1,5 @@
+.scratch/
+tests/fixtures/refinement-eval.inbox.json
 *.bak
 *.log
 *.qslog

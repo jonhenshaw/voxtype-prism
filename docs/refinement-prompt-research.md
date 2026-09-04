@@ -234,6 +234,10 @@ added only when a new regression demonstrates their value.
 | Empty input | Emit nothing, not a status message |
 | Any case | Emit only cleaned text, with no meta-commentary or wrapper |
 
+The executable corpus is [`tests/fixtures/refinement-eval.json`](../tests/fixtures/refinement-eval.json).
+Run it with `VOXTYPE_LIVE_REFINE_PROVIDER=… python3 tests/run_refinement_eval.py`.
+Dated provider/model trials, including raw JSON, live in [`experiments/`](../experiments/README.md).
+
 Run the fixed corpus against Grok, Anthropic, OpenAI, and the local model. Keep
 every observed failure as a regression case. A prompt is ready when all hard
 invariants pass across the supported model matrix; “perfect” cannot be

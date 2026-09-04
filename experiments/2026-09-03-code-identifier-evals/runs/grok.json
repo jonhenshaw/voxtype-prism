@@ -1,0 +1,232 @@
+{
+  "recorded_at": "2026-09-04T03:59:42Z",
+  "git_head": "4d0590a71cd57e15f81bf23070d48a0dfb11e90d",
+  "corpus": "tests/fixtures/refinement-eval.json",
+  "provider": "grok",
+  "model": "grok-4.20-0309-non-reasoning",
+  "base_url": "https://api.x.ai/v1",
+  "lexical": null,
+  "passed": 14,
+  "failed": 5,
+  "unique": {
+    "all": {
+      "passed": 8,
+      "total": 13
+    },
+    "screen": {
+      "passed": 8,
+      "total": 13
+    }
+  },
+  "rows": [
+    {
+      "name": "screen_code_camel_league_id",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 529,
+      "expected": "Update the leagueId field.",
+      "actual": "Update the leagueId field.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Update the league id field.\"}"
+    },
+    {
+      "name": "screen_code_camel_canonical_player",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 817,
+      "expected": "Look up the canonicalPlayerId.",
+      "actual": "Look up the canonicalPlayerId.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Look up the canonical player id.\"}"
+    },
+    {
+      "name": "screen_code_camel_canonical_player",
+      "attempt": 2,
+      "tags": "screen",
+      "ok": false,
+      "elapsed_ms": 569,
+      "expected": "Look up the canonicalPlayerId.",
+      "actual": "Look up the canonical player ID.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Look up the canonical player id.\"}"
+    },
+    {
+      "name": "screen_code_camel_accessibility",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": false,
+      "elapsed_ms": 495,
+      "expected": "Set the accessibilityLabel.",
+      "actual": "Set the accessibility label.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Set the accessibility label.\"}"
+    },
+    {
+      "name": "screen_code_camel_testid",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 522,
+      "expected": "The testID is missing.",
+      "actual": "The testID is missing.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"The test id is missing.\"}"
+    },
+    {
+      "name": "screen_code_pascal_slot_picker",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": false,
+      "elapsed_ms": 488,
+      "expected": "Open the SlotPicker.",
+      "actual": "Open the slot picker.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Open the slot picker.\"}"
+    },
+    {
+      "name": "screen_code_snake_created_at",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 495,
+      "expected": "Sort by created_at.",
+      "actual": "Sort by created_at.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Sort by created at.\"}"
+    },
+    {
+      "name": "screen_code_snake_collect",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": false,
+      "elapsed_ms": 581,
+      "expected": "Call collect_on_screen_spellings.",
+      "actual": "Call collect on screen spellings.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Call collect on screen spellings.\"}"
+    },
+    {
+      "name": "screen_code_kebab_repo",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": false,
+      "elapsed_ms": 453,
+      "expected": "Clone fourth-down-platform.",
+      "actual": "Clone fourth down platform.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Clone fourth down platform.\"}"
+    },
+    {
+      "name": "screen_code_screaming_env",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 5413,
+      "expected": "Print the FOURTH_DOWN_MODEL_BASE_URL.",
+      "actual": "Print the FOURTH_DOWN_MODEL_BASE_URL.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Print the fourth down model base url.\"}"
+    },
+    {
+      "name": "screen_code_qml_file",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 505,
+      "expected": "Edit SettingsPanel.qml.",
+      "actual": "Edit SettingsPanel.qml.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Edit settings panel qml.\"}"
+    },
+    {
+      "name": "screen_code_two_identifiers",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 552,
+      "expected": "Rename leagueId to accountId.",
+      "actual": "Rename leagueId to accountId.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Rename league id to account id.\"}"
+    },
+    {
+      "name": "screen_code_two_identifiers",
+      "attempt": 2,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 513,
+      "expected": "Rename leagueId to accountId.",
+      "actual": "Rename leagueId to accountId.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Rename league id to account id.\"}"
+    },
+    {
+      "name": "screen_code_two_identifiers",
+      "attempt": 3,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 496,
+      "expected": "Rename leagueId to accountId.",
+      "actual": "Rename leagueId to accountId.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Rename league id to account id.\"}"
+    },
+    {
+      "name": "screen_code_prefix_not_expanded",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 528,
+      "expected": "Ship the indicator tomorrow.",
+      "actual": "Ship the indicator tomorrow.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Ship the indicator tomorrow.\"}"
+    },
+    {
+      "name": "screen_code_prefix_not_expanded",
+      "attempt": 2,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 439,
+      "expected": "Ship the indicator tomorrow.",
+      "actual": "Ship the indicator tomorrow.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Ship the indicator tomorrow.\"}"
+    },
+    {
+      "name": "screen_code_prefix_not_expanded",
+      "attempt": 3,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 584,
+      "expected": "Ship the indicator tomorrow.",
+      "actual": "Ship the indicator tomorrow.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Ship the indicator tomorrow.\"}"
+    },
+    {
+      "name": "screen_code_busy_unspoken",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 489,
+      "expected": "Ship it tomorrow.",
+      "actual": "Ship it tomorrow.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Ship it tomorrow.\"}"
+    },
+    {
+      "name": "screen_code_busy_unspoken",
+      "attempt": 2,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 486,
+      "expected": "Ship it tomorrow.",
+      "actual": "Ship it tomorrow.",
+      "error": "",
+      "user": "{\"on_screen_spellings\":[\"leagueId\",\"playerId\",\"accountId\",\"canonicalPlayerId\",\"schemaVersion\",\"accessibilityLabel\",\"testID\",\"SlotPicker\",\"GlassCard\",\"ActivityIndicator\",\"LeagueSwitcher\",\"PlayerProfile\",\"SettingsPanel.qml\",\"voxtype-refine\",\"fourth-down-platform\",\"FOURTH_DOWN_MODEL_BASE_URL\",\"created_at\",\"collect_on_screen_spellings\"],\"transcript\":\"Ship it tomorrow.\"}"
+    }
+  ]
+}

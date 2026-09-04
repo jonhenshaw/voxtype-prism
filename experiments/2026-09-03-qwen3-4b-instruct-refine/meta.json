@@ -1,0 +1,25 @@
+{
+  "id": "2026-09-03-qwen3-4b-instruct-refine",
+  "date": "2026-09-03",
+  "status": "complete",
+  "question": "Can a small fast local instruct model (Qwen3-4B-Instruct-2507) replace Grok for Prism refine?",
+  "corpus": "tests/fixtures/refinement-eval.json",
+  "harness": "tests/run_refinement_eval.py",
+  "git_head": "88c2b66dfba90c27b6388e168876a6c0636f9804",
+  "runs": [
+    {
+      "id": "qwen3-4b-instruct-2507",
+      "file": "runs/qwen3-4b-instruct-2507.json",
+      "provider": "local",
+      "model": "Qwen3-4B-Instruct-2507",
+      "conditions": {
+        "endpoint": "http://127.0.0.1:8002/v1",
+        "quant": "Q4_K_M",
+        "thinking": false,
+        "temperature": 0.1,
+        "dedicated_slot": true,
+        "ctx": 8192
+      }
+    }
+  ]
+}
