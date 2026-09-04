@@ -1988,7 +1988,6 @@ class RefineHelperTests(unittest.TestCase):
                 "raw_fold": MODULE._fold_lex(
                     "Alpha bravo charlie delta echo foxtrot golf."
                 ),
-                "ident_shaped": True,
                 "provider": "local",
                 "raw": "Alpha bravo charlie delta echo foxtrot golf.",
                 "out": "Alpha bravo charlie delta echo foxtrot golf.",
@@ -2050,6 +2049,22 @@ class RefineHelperTests(unittest.TestCase):
             self.assertEqual(MODULE.main(["harvest-evals", "--root", str(root)]), 2)
             self.assertFalse((fixtures / "refinement-eval.inbox.json").exists())
             self.assertEqual(product.read_text(encoding="utf-8"), "[]\n")
+
+    def test_harvest_evals_fails_closed_on_corrupt_inbox(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._init_tracked_repo(
+                root,
+                {"foo/alpha_bravo_charlie_delta_echo_foxtrot_golf.py": "x\n"},
+            )
+            fixtures = root / "tests" / "fixtures"
+            fixtures.mkdir(parents=True)
+            (fixtures / "refinement-eval.json").write_text("[]\n", encoding="utf-8")
+            inbox = fixtures / "refinement-eval.inbox.json"
+            inbox.write_text("{not json\n", encoding="utf-8")
+            before = inbox.read_text(encoding="utf-8")
+            self.assertEqual(MODULE.main(["harvest-evals", "--root", str(root)]), 1)
+            self.assertEqual(inbox.read_text(encoding="utf-8"), before)
 
     def test_harvest_evals_help_documents_inbox_and_take_log(self) -> None:
         parser = MODULE.parser()

@@ -64,6 +64,7 @@ MAX_SESSION_HARVEST_FILE_BYTES = 2 * 1024 * 1024
 MAX_SESSION_HARVEST_LINES = 2000
 MAX_SESSION_HARVEST_FILES = 200
 MAX_HARVEST_INBOX_BYTES = 2 * 1024 * 1024
+MAX_HARVEST_IDENTIFIERS = 4096
 MAX_TAKE_LOG_HARVEST_LINES = 20_000
 GIT_LS_FILES_TIMEOUT_SECONDS = 15.0
 HARVEST_INBOX_RELATIVE = Path("tests/fixtures/refinement-eval.inbox.json")
@@ -1099,6 +1100,33 @@ def extract_spellings(text: str) -> list[str]:
         tokens.append(synthetic)
         existing.add(folded)
     return _bound_on_screen_spellings(tokens)
+
+
+def _harvest_identifiers(text: str) -> list[str]:
+    """Like extract_spellings but without the live OCR JSON cap."""
+    terms = extract_spellings(text)
+    if len(terms) < MAX_ON_SCREEN_SPELLINGS:
+        return terms
+    kept_lines: list[str] = []
+    for line in text.splitlines():
+        if SECRET_ASSIGNMENT_RE.search(line) or MASK_RUN_RE.search(line):
+            continue
+        kept_lines.append(line)
+    scrubbed = "\n".join(kept_lines)
+    scrubbed = EMAIL_RE.sub(" ", scrubbed)
+    scrubbed = URL_RE.sub(" ", scrubbed)
+    scrubbed = JWT_RE.sub(" ", scrubbed)
+    scrubbed = HEX_RE.sub(" ", scrubbed)
+    found: list[str] = []
+    seen: set[str] = set()
+    for token in TOKEN_RE.findall(scrubbed):
+        if not _keep_spelling_token(token) or token in seen:
+            continue
+        seen.add(token)
+        found.append(token)
+        if len(found) >= MAX_HARVEST_IDENTIFIERS:
+            break
+    return found
 
 
 def _json_int(value: object) -> int | None:
@@ -2311,7 +2339,7 @@ def mint_factory_a_case(ident: str) -> dict[str, Any] | None:
 
 
 def mint_factory_b_case(record: dict[str, Any]) -> dict[str, Any] | None:
-    if record.get("changed") is not False or record.get("ident_shaped") is not True:
+    if record.get("changed") is not False:
         return None
     raw = record.get("raw")
     if not isinstance(raw, str) or not raw.strip():
@@ -2348,20 +2376,29 @@ def mint_factory_b_case(record: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _load_eval_cases(path: Path) -> list[dict[str, Any]]:
+    """Load a JSON array of eval objects. Missing file is empty; a present
+    corrupt or oversized file raises RuntimeError so harvest cannot wipe it.
+    """
+    try:
+        exists = path.exists()
+    except OSError as error:
+        raise RuntimeError(f"cannot stat {path}: {error}") from error
+    if not exists:
+        return []
     try:
         if path.is_symlink() or not path.is_file():
-            return []
+            raise RuntimeError(f"{path} is not a regular file")
         raw = path.read_bytes()
-    except OSError:
-        return []
+    except OSError as error:
+        raise RuntimeError(f"cannot read {path}: {error}") from error
     if len(raw) > MAX_HARVEST_INBOX_BYTES:
-        return []
+        raise RuntimeError(f"{path} exceeds the harvest byte limit")
     try:
         payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return []
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"{path} is not valid JSON") from error
     if not isinstance(payload, list):
-        return []
+        raise RuntimeError(f"{path} is not a JSON array")
     return [item for item in payload if isinstance(item, dict)]
 
 
@@ -2538,12 +2575,16 @@ def cmd_harvest_evals(root: Path | None = None, sessions_dirs: list[Path] | None
     if inbox == product:
         print("harvest-evals: refusing to write the product corpus", file=sys.stderr)
         return 2
-    blocked = {
-        str(case.get("name"))
-        for case in _load_eval_cases(product)
-        if isinstance(case.get("name"), str)
-    }
-    existing = _load_eval_cases(inbox)
+    try:
+        blocked = {
+            str(case.get("name"))
+            for case in _load_eval_cases(product)
+            if isinstance(case.get("name"), str)
+        }
+        existing = _load_eval_cases(inbox)
+    except RuntimeError as error:
+        print(f"harvest-evals: {error}", file=sys.stderr)
+        return 1
     minted: list[dict[str, Any]] = []
     seen_idents: set[str] = set()
     for basename in _git_tracked_basenames(base):
@@ -2559,7 +2600,7 @@ def cmd_harvest_evals(root: Path | None = None, sessions_dirs: list[Path] | None
             text = _read_session_jsonl_text(path)
             if not text:
                 continue
-            for ident in extract_spellings(text):
+            for ident in _harvest_identifiers(text):
                 if ident in seen_idents:
                     continue
                 seen_idents.add(ident)
