@@ -1,0 +1,45 @@
+{
+  "id": "2026-09-03-s1-mini-on-screen-refine",
+  "date": "2026-09-03",
+  "status": "complete",
+  "question": "Can S1-mini by Superwhisper replace Grok for Prism refine, including on-screen spellings?",
+  "corpus": "tests/fixtures/refinement-eval.json",
+  "harness": "tests/run_refinement_eval.py",
+  "runs": [
+    {
+      "id": "s1mini-lexical-on",
+      "file": "runs/s1mini-lexical-on.json",
+      "provider": "s1mini",
+      "model": "s1-mini",
+      "conditions": {
+        "lexical": true,
+        "endpoint": "http://127.0.0.1:8001/v1",
+        "quant": "Q4_K_M",
+        "thinking": false,
+        "temperature": 0
+      }
+    },
+    {
+      "id": "s1mini-lexical-off",
+      "file": "runs/s1mini-lexical-off.json",
+      "provider": "s1mini",
+      "model": "s1-mini",
+      "conditions": {
+        "lexical": false,
+        "endpoint": "http://127.0.0.1:8001/v1",
+        "quant": "Q4_K_M",
+        "thinking": false,
+        "temperature": 0
+      }
+    },
+    {
+      "id": "grok",
+      "file": "runs/grok.json",
+      "provider": "grok",
+      "model": "grok-4.20-0309-non-reasoning",
+      "conditions": {
+        "endpoint": "https://api.x.ai/v1"
+      }
+    }
+  ]
+}
