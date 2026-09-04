@@ -65,6 +65,21 @@ ShellRoot {
                 if (!workbench.windowVisible || workbench.refineProvider === "")
                     return
                 savedPrompt = workbench.refinePrompt
+                if (workbench.screenContextToggle.enabled) {
+                    fail("on-screen toggle enabled while refinement is off")
+                    return
+                }
+                workbench.refineScreenContext = true
+                workbench.refineEnabled = true
+                if (!workbench.screenContextToggle.enabled) {
+                    fail("on-screen toggle stayed disabled after enabling refinement")
+                    return
+                }
+                workbench.refineEnabled = false
+                if (workbench.screenContextToggle.enabled || !workbench.refineScreenContext) {
+                    fail("disabling refinement cleared or re-enabled on-screen words")
+                    return
+                }
                 workbench.refineProvider = "anthropic"
                 workbench.refinePrompt = savedPrompt + "\nKeep product names exact."
                 workbench.refineDictionary = "Voxtype Prism\nHyprland"
@@ -92,7 +107,8 @@ ShellRoot {
                 if (workbench.dirty) return
                 if (workbench.refineProvider !== "anthropic"
                         || workbench.indicatorPreset !== "bar-pulse"
-                        || workbench.indicatorPosition !== "top-center") {
+                        || workbench.indicatorPosition !== "top-center"
+                        || workbench.refineScreenContext !== true) {
                     fail("saved draft did not round-trip")
                     return
                 }

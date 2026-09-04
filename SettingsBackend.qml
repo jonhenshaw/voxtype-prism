@@ -120,6 +120,9 @@ QtObject {
             refine.prompt = String(nextRefine.prompt || "")
         if (String(nextRefine.dictionary || "") !== String(savedRefine.dictionary || ""))
             refine.dictionary = String(nextRefine.dictionary || "")
+        if (Boolean(nextRefine.screenContext) !== Boolean(savedRefine.screenContext))
+            refine.screenContext = Boolean(nextRefine.screenContext)
+
 
         if (String(nextIndicator.preset || "signal")
                 !== String(savedIndicator.preset || "signal"))

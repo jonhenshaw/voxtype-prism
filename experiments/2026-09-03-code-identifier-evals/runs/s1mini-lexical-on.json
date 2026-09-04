@@ -1,0 +1,232 @@
+{
+  "recorded_at": "2026-09-04T03:59:55Z",
+  "git_head": "4d0590a71cd57e15f81bf23070d48a0dfb11e90d",
+  "corpus": "tests/fixtures/refinement-eval.json",
+  "provider": "s1mini",
+  "model": "s1-mini",
+  "base_url": "http://127.0.0.1:8001/v1",
+  "lexical": true,
+  "passed": 17,
+  "failed": 2,
+  "unique": {
+    "all": {
+      "passed": 11,
+      "total": 13
+    },
+    "screen": {
+      "passed": 11,
+      "total": 13
+    }
+  },
+  "rows": [
+    {
+      "name": "screen_code_camel_league_id",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 43,
+      "expected": "Update the leagueId field.",
+      "actual": "Update the leagueId field.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nUpdate the leagueId field."
+    },
+    {
+      "name": "screen_code_camel_canonical_player",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 28,
+      "expected": "Look up the canonicalPlayerId.",
+      "actual": "Look up the canonicalPlayerId.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nLook up the canonicalPlayerId."
+    },
+    {
+      "name": "screen_code_camel_canonical_player",
+      "attempt": 2,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 20,
+      "expected": "Look up the canonicalPlayerId.",
+      "actual": "Look up the canonicalPlayerId.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nLook up the canonicalPlayerId."
+    },
+    {
+      "name": "screen_code_camel_accessibility",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 27,
+      "expected": "Set the accessibilityLabel.",
+      "actual": "Set the accessibilityLabel.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nSet the accessibilityLabel."
+    },
+    {
+      "name": "screen_code_camel_testid",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 20,
+      "expected": "The testID is missing.",
+      "actual": "The testID is missing.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nThe testID is missing."
+    },
+    {
+      "name": "screen_code_pascal_slot_picker",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 26,
+      "expected": "Open the SlotPicker.",
+      "actual": "Open the SlotPicker.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nOpen the SlotPicker."
+    },
+    {
+      "name": "screen_code_snake_created_at",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 19,
+      "expected": "Sort by created_at.",
+      "actual": "Sort by created_at.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nSort by created_at."
+    },
+    {
+      "name": "screen_code_snake_collect",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 23,
+      "expected": "Call collect_on_screen_spellings.",
+      "actual": "Call collect_on_screen_spellings.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nCall collect_on_screen_spellings."
+    },
+    {
+      "name": "screen_code_kebab_repo",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": false,
+      "elapsed_ms": 29,
+      "expected": "Clone fourth-down-platform.",
+      "actual": "Clone fourth-down platform.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nClone fourth-down-platform."
+    },
+    {
+      "name": "screen_code_screaming_env",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": false,
+      "elapsed_ms": 28,
+      "expected": "Print the FOURTH_DOWN_MODEL_BASE_URL.",
+      "actual": "Print the 4th_DOWN_MODEL_BASE_URL.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nPrint the FOURTH_DOWN_MODEL_BASE_URL."
+    },
+    {
+      "name": "screen_code_qml_file",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 24,
+      "expected": "Edit SettingsPanel.qml.",
+      "actual": "Edit SettingsPanel.qml.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nEdit SettingsPanel.qml."
+    },
+    {
+      "name": "screen_code_two_identifiers",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 24,
+      "expected": "Rename leagueId to accountId.",
+      "actual": "Rename leagueId to accountId.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nRename leagueId to accountId."
+    },
+    {
+      "name": "screen_code_two_identifiers",
+      "attempt": 2,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 18,
+      "expected": "Rename leagueId to accountId.",
+      "actual": "Rename leagueId to accountId.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nRename leagueId to accountId."
+    },
+    {
+      "name": "screen_code_two_identifiers",
+      "attempt": 3,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 19,
+      "expected": "Rename leagueId to accountId.",
+      "actual": "Rename leagueId to accountId.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nRename leagueId to accountId."
+    },
+    {
+      "name": "screen_code_prefix_not_expanded",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 21,
+      "expected": "Ship the indicator tomorrow.",
+      "actual": "Ship the indicator tomorrow.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nShip the indicator tomorrow."
+    },
+    {
+      "name": "screen_code_prefix_not_expanded",
+      "attempt": 2,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 15,
+      "expected": "Ship the indicator tomorrow.",
+      "actual": "Ship the indicator tomorrow.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nShip the indicator tomorrow."
+    },
+    {
+      "name": "screen_code_prefix_not_expanded",
+      "attempt": 3,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 16,
+      "expected": "Ship the indicator tomorrow.",
+      "actual": "Ship the indicator tomorrow.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nShip the indicator tomorrow."
+    },
+    {
+      "name": "screen_code_busy_unspoken",
+      "attempt": 1,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 16,
+      "expected": "Ship it tomorrow.",
+      "actual": "Ship it tomorrow.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nShip it tomorrow."
+    },
+    {
+      "name": "screen_code_busy_unspoken",
+      "attempt": 2,
+      "tags": "screen",
+      "ok": true,
+      "elapsed_ms": 15,
+      "expected": "Ship it tomorrow.",
+      "actual": "Ship it tomorrow.",
+      "error": "",
+      "user": "[Styling: semi-formal] [Structure: prose] [Context: general]\nShip it tomorrow."
+    }
+  ]
+}

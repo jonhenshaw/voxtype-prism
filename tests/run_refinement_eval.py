@@ -8,6 +8,7 @@ experiments/README.md).
 
   VOXTYPE_LIVE_REFINE_PROVIDER=s1mini python3 tests/run_refinement_eval.py
   VOXTYPE_LIVE_REFINE_PROVIDER=grok python3 tests/run_refinement_eval.py
+  VOXTYPE_LIVE_REFINE_PROVIDER=grok python3 tests/run_refinement_eval.py --only 'screen_code_*'
   VOXTYPE_LIVE_REFINE_PROVIDER=s1mini VOXTYPE_S1MINI_LEXICAL=0 python3 tests/run_refinement_eval.py \
     --out experiments/2026-09-03-s1-mini-on-screen-refine/runs/s1mini-lexical-off.json
 """
@@ -15,6 +16,7 @@ experiments/README.md).
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import inspect
 import json
 import os
@@ -40,8 +42,20 @@ sys.modules["voxtype_refine_eval_runner"] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
-def load_cases() -> list[dict]:
-    return json.loads(CASES_PATH.read_text(encoding="utf-8"))
+def load_cases(only: str = "") -> list[dict]:
+    cases = json.loads(CASES_PATH.read_text(encoding="utf-8"))
+    patterns = [item.strip() for item in only.split(",") if item.strip()]
+    if not patterns:
+        return cases
+    selected = [
+        case
+        for case in cases
+        if any(fnmatch.fnmatchcase(case["name"], pattern) for pattern in patterns)
+    ]
+    if not selected:
+        names = ", ".join(case["name"] for case in cases)
+        raise SystemExit(f"no cases matched {only!r}; known names: {names}")
+    return selected
 
 
 def case_tags(case: dict) -> str:
@@ -119,7 +133,7 @@ def unique_case_stats(rows: list[dict]) -> dict[str, dict[str, int]]:
     return {"all": score(by_name), "screen": score(screen)}
 
 
-def run(out_path: str = "") -> int:
+def run(out_path: str = "", only: str = "") -> int:
     provider_id = os.environ.get("VOXTYPE_LIVE_REFINE_PROVIDER", "").strip().lower()
     if not provider_id:
         print("set VOXTYPE_LIVE_REFINE_PROVIDER to grok, anthropic, openai, local, or s1mini", file=sys.stderr)
@@ -129,7 +143,7 @@ def run(out_path: str = "") -> int:
         return 2
     provider = apply_base_url(MODULE.PROVIDERS[provider_id])
     model = os.environ.get("VOXTYPE_REFINE_MODEL", "").strip() or provider.model
-    cases = load_cases()
+    cases = load_cases(only=only)
     rows = []
     passed = 0
     failed = 0
@@ -142,6 +156,10 @@ def run(out_path: str = "") -> int:
             actual = ""
             try:
                 actual = MODULE.complete(provider, model, user, system)
+                dictionary = "\n".join(case.get("dictionary", []))
+                actual = MODULE.finish_refinement(
+                    actual, dictionary, case.get("on_screen_spellings")
+                )
             except Exception as exc:  # noqa: BLE001 — eval harness records provider errors
                 error = f"{type(exc).__name__}: {exc}"
             elapsed_ms = round((time.monotonic() - started) * 1000)
@@ -167,7 +185,9 @@ def run(out_path: str = "") -> int:
 
     unique = unique_case_stats(rows)
     lexical = None
-    if provider.id == "s1mini" and hasattr(MODULE, "s1mini_lexical_enabled"):
+    if hasattr(MODULE, "lexical_hints_enabled"):
+        lexical = MODULE.lexical_hints_enabled()
+    elif provider.id == "s1mini" and hasattr(MODULE, "s1mini_lexical_enabled"):
         lexical = MODULE.s1mini_lexical_enabled()
     print(f"provider={provider.id} model={model} base_url={provider.base_url}")
     if lexical is not None:
@@ -230,8 +250,13 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="write JSON results (otherwise VOXTYPE_EVAL_JSON, if set)",
     )
+    parser.add_argument(
+        "--only",
+        default="",
+        help="comma-separated case names or globs (e.g. screen_code_*)",
+    )
     args = parser.parse_args(argv)
-    return run(out_path=args.out)
+    return run(out_path=args.out, only=args.only)
 
 
 if __name__ == "__main__":

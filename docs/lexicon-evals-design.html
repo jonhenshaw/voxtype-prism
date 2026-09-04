@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prism lexicon &amp; automatic evals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;0,7..72,700;1,7..72,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --chassis: #1a1814;
+      --chassis-2: #242018;
+      --paper: #f1ece1;
+      --ink: #1c1915;
+      --ink-soft: #4a4338;
+      --rule: #d4ccbb;
+      --led: #e08a2c;
+      --led-dim: #b56c1c;
+      --ok: #3d6b45;
+      --bad: #8f3a2a;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --serif: "Literata", "Iowan Old Style", Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--chassis); color: var(--paper); }
+    body {
+      font-family: var(--serif);
+      font-optical-sizing: auto;
+      font-size: 19px;
+      line-height: 1.55;
+    }
+    a { color: inherit; }
+    .shell {
+      display: grid;
+      grid-template-columns: 15rem minmax(0, 44rem) 1fr;
+      gap: 0;
+      min-height: 100vh;
+    }
+    nav {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      padding: 1.75rem 1.1rem 2rem 1.4rem;
+      border-right: 1px solid #3a342a;
+      background: var(--chassis-2);
+      overflow: auto;
+    }
+    nav .mark {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      color: var(--led);
+      margin: 0 0 1.6rem;
+    }
+    nav ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    nav a {
+      display: block;
+      text-decoration: none;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      line-height: 1.35;
+      color: #cbbfa8;
+      padding: 0.42rem 0;
+      border-top: 1px solid #3a342a;
+    }
+    nav a:hover, nav a:focus-visible { color: var(--paper); }
+    main {
+      background: var(--paper);
+      color: var(--ink);
+      padding: 2.4rem 2.2rem 5rem;
+      min-height: 100vh;
+      box-shadow: 12px 0 40px rgba(0,0,0,.28);
+    }
+    .rail { pointer-events: none; }
+    h1 {
+      font-size: clamp(2.1rem, 4.4vw, 3.15rem);
+      line-height: 1.05;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin: 0 0 0.75rem;
+    }
+    .lede {
+      font-size: 1.12rem;
+      color: var(--ink-soft);
+      margin: 0 0 1.8rem;
+      max-width: 38rem;
+    }
+    h2 {
+      font-size: 1.45rem;
+      line-height: 1.2;
+      margin: 2.4rem 0 0.7rem;
+      padding-top: 0.4rem;
+      border-top: 2px solid var(--ink);
+    }
+    h3 {
+      font-size: 1.08rem;
+      margin: 1.5rem 0 0.45rem;
+      font-weight: 700;
+    }
+    p { margin: 0 0 0.85rem; }
+    p, li { max-width: 40rem; }
+    ul, ol { margin: 0 0 1rem; padding-left: 1.2rem; }
+    li { margin: 0.25rem 0; }
+    code, .id {
+      font-family: var(--mono);
+      font-size: 0.84em;
+    }
+    pre {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      line-height: 1.45;
+      background: #1f1c18;
+      color: #f1ece1;
+      padding: 0.9rem 1rem;
+      overflow: auto;
+      margin: 0.6rem 0 1.1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      margin: 0.5rem 0 1.2rem;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 0.45rem 0.55rem 0.45rem 0;
+      border-top: 1px solid var(--rule);
+    }
+    th { font-weight: 600; }
+    .decision {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      border: 1px solid var(--ink);
+      margin: 1rem 0 1.4rem;
+    }
+    .decision div { padding: 0.85rem 1rem 1rem; }
+    .decision .no { border-left: 1px solid var(--ink); }
+    .decision h3 { margin-top: 0; }
+    .decision .yes h3 { color: var(--ok); }
+    .decision .no h3 { color: var(--bad); }
+    .take {
+      border: 1px solid var(--ink);
+      margin: 1rem 0 1.3rem;
+      background: #fffdf7;
+    }
+    .take header {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.55rem 0.85rem;
+      border-bottom: 1px solid var(--ink);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+    }
+    .take ol {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .take li {
+      max-width: none;
+      padding: 0.7rem 0.85rem;
+      border-top: 1px solid var(--rule);
+      display: grid;
+      grid-template-columns: 6.2rem 1fr;
+      gap: 0.8rem;
+      margin: 0;
+    }
+    .take li:first-child { border-top: 0; }
+    .take .when {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--ink-soft);
+    }
+    .film {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      border: 1px solid var(--ink);
+      margin: 0.8rem 0 1.2rem;
+    }
+    .film button {
+      appearance: none;
+      background: transparent;
+      border: 0;
+      border-right: 1px solid var(--ink);
+      padding: 0.85rem 0.75rem 1rem;
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+      color: inherit;
+    }
+    .film button:last-child { border-right: 0; }
+    .film button[aria-selected="true"] { background: #fff; }
+    .film strong { display: block; font-size: 0.95rem; margin-bottom: 0.25rem; }
+    .film span { display: block; font-size: 0.82rem; color: var(--ink-soft); }
+    .stage {
+      border: 1px solid var(--ink);
+      border-top: 0;
+      padding: 1rem 1rem 1.1rem;
+      background: #fff;
+      margin: -1.2rem 0 1.3rem;
+      min-height: 8.5rem;
+    }
+    .stage .io {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    .ok { color: var(--ok); }
+    .bad { color: var(--bad); }
+    .note {
+      font-size: 0.95rem;
+      color: var(--ink-soft);
+      border-left: 3px solid var(--led);
+      padding: 0.15rem 0 0.15rem 0.8rem;
+      margin: 0.8rem 0 1.1rem;
+    }
+    .wp {
+      margin: 0 0 0.9rem;
+      padding: 0.8rem 0 0;
+      border-top: 1px solid var(--rule);
+    }
+    .wp h3 { margin-top: 0; }
+    .wp .owner {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--ink-soft);
+    }
+    kbd {
+      font-family: var(--mono);
+      font-size: 0.78em;
+      border: 1px solid var(--ink);
+      padding: 0 0.28em;
+      background: #fff;
+    }
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+      nav { height: auto; position: relative; display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
+      nav ol { display: flex; flex-wrap: wrap; gap: 0 1rem; }
+      nav a { border: 0; }
+      .decision, .film { grid-template-columns: 1fr; }
+      .film button { border-right: 0; border-bottom: 1px solid var(--ink); }
+      .take li { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav aria-label="Sections">
+      <p class="mark">voxtype-prism<br />lexicon spec<br />2026-09-04</p>
+      <ol>
+        <li><a href="#job">The job</a></li>
+        <li><a href="#today">What it does today</a></li>
+        <li><a href="#evals">Automatic evals</a></li>
+        <li><a href="#capture">OCR &amp; screenshots</a></li>
+        <li><a href="#write">What gets written</a></li>
+        <li><a href="#sources">Other context</a></li>
+        <li><a href="#packages">Work packages</a></li>
+      </ol>
+    </nav>
+    <main>
+      <h1>A lexicon that learns from use, and evals that write themselves.</h1>
+      <p class="lede">Prism already OCRs the focused window at refine time. This spec is how we stop missing identifiers that scrolled off, how we never auto-write secrets into the dictionary, and how evals appear from real dictation without anyone pasting JSON.</p>
+
+      <h2 id="job">The job</h2>
+      <p>You dictate code while looking at an agent terminal. ASR splits <code>apply_lexical_hints</code> into “apply lexical hints.” Refine should emit the identifier. You should not have to harvest test cases by hand when that fails.</p>
+      <p>Three hard rules, unchanged:</p>
+      <ul>
+        <li>Pixels never leave the machine. Grok gets strings, not screenshots.</li>
+        <li>OCR never writes <code>refine-dictionary.md</code> by itself.</li>
+        <li>A screen term is used only when the transcript already supports it. Unspoken names stay out.</li>
+      </ul>
+      <div class="decision">
+        <div class="yes">
+          <h3>Do</h3>
+          <p>Local grim. Recency across windows you just focused. Harvest identifiers from the current agent session and repo. Log every take. Mint evals from those logs. Pin a join to the dictionary only when you say so, or after repeated successful joins you confirm.</p>
+        </div>
+        <div class="no">
+          <h3>Do not</h3>
+          <p>OCR both 4K monitors by default. Upload PNGs. Append every OCR token to the persistent dictionary. Dump full window text into <code>context_for_disambiguation_only</code>. Commit personal sentences to git.</p>
+        </div>
+      </div>
+
+      <h2 id="today">What it does today</h2>
+      <p>Recording stops → Parakeet transcribes → <code>voxtype-refine</code> runs. If <code>screen_context = true</code>, it screenshots the <em>focused</em> Hyprland window, OCRs it, keeps code-shaped tokens, sends them with the transcript to Grok, then locally respells near-misses. A 5-minute cache remembers recent tokens. If the whole utterance is identifier-shaped, it can join to snake_case even with an empty OCR list.</p>
+      <p>Limits you already hit: the shot is the visible rectangle only; it happens <em>after</em> transcription, so you may have scrolled; tesseract drops underscores; a pasted miss pollutes the next shot with spaced English.</p>
+
+      <h2 id="evals">Automatic evals</h2>
+      <p>You should never copy a case into <code>refinement-eval.json</code>. The machine already has the pair it needs: what you said, what was on screen, what came out. Evals are a filter over that stream, not a writing assignment.</p>
+
+      <div class="film" role="tablist" aria-label="How a take becomes an eval">
+        <button type="button" role="tab" aria-selected="true" data-step="0"><strong>Take</strong><span>already happens</span></button>
+        <button type="button" role="tab" aria-selected="false" data-step="1"><strong>Log</strong><span>local jsonl</span></button>
+        <button type="button" role="tab" aria-selected="false" data-step="2"><strong>Mint</strong><span>no paste</span></button>
+        <button type="button" role="tab" aria-selected="false" data-step="3"><strong>Keep</strong><span>git only if clean</span></button>
+      </div>
+      <div class="stage" id="eval-stage" role="tabpanel">
+        <p class="io">raw: apply lexical hints.
+screen: apply_lexical_hints, Hyprland, …
+out: apply_lexical_hints.</p>
+        <p>Every dictation already produces this triple. We persist it. That is the only source of evals.</p>
+      </div>
+
+      <h3>The take log</h3>
+      <p>Path: <code>$XDG_STATE_HOME/voxtype/refine-takes.jsonl</code>. One line per refine. Not in git. Mode 0600.</p>
+      <pre>{
+  "t": "2026-09-04T12:40:11Z",
+  "raw": "apply lexical hints.",
+  "out": "apply_lexical_hints.",
+  "ok_lex": true,
+  "window": "com.mitchellh.ghostty",
+  "screen": ["apply_lexical_hints", "Hyprland"],
+  "changed": true
+}</pre>
+      <p>Voxtype already prints <code>Post-processed: changed: true/false</code>. The child can write the rest. No extra gesture for logging.</p>
+
+      <h3>Three minting factories (zero copy-paste)</h3>
+      <p><strong>A. Identifier harvest (local, no API, timer or on refine).</strong> From today’s OCR cache plus Claude / Hermes / Codex / Grok session files in the current cwd, run <code>extract_spellings</code>. For each new token, invent the spoken split (<code>apply_lexical_hints</code> → “apply lexical hints”). Run <code>apply_lexical_hints</code> in-process. If it fails, that is a joiner regression and becomes a unit case immediately. If it passes, keep one canonical example in a local set so the shape cannot silently regress. This is how the <code>screen_code_*</code> cases were born, without you typing JSON.</p>
+      <p><strong>B. Live miss (no gesture).</strong> If <code>changed: false</code> and the raw utterance is identifier-shaped and a screen or cache token has the same folded form, mint <code>{transcript: raw, expected: that token, on_screen_spellings: screen}</code>. If two takes within a minute share a fold and the second differs, treat take 1 as spoken and take 2 as expected (self-correction).</p>
+      <p><strong>C. Optional “wrong” chord.</strong> One key after paste. The next dictation or the next typed replacement in the same window is <code>expected</code>. Still no JSON. This is the only human signal, and it is optional because A and B already catch identifier misses.</p>
+
+      <h3>What is allowed into git</h3>
+      <p>A nightly (or on-demand) <code>voxtype-refine harvest-evals</code> reads the take log and the harvest set, then writes <code>tests/fixtures/refinement-eval.inbox.json</code>. A case is auto-accepted into <code>refinement-eval.json</code> only when all of these hold:</p>
+      <ul>
+        <li><code>expected</code> is a single code token (underscore, hyphen, mixed case, or backtick wrap), length ≤ 128</li>
+        <li><code>transcript</code> is that token spoken as words, plus optional final punctuation</li>
+        <li>no emails, paths under <code>/home/henny/</code>, or dictionary secrets</li>
+        <li>the name is new</li>
+      </ul>
+      <p>Personal sentences (“um send the report…”) stay in the private log forever. They never become repo evals unless you later promote one on purpose. Identifier cases promote themselves.</p>
+      <p class="note">Most identifier evals do not need Grok. <code>apply_lexical_hints</code> is the test. Run that on harvest in milliseconds. Call the live provider only for a nightly sample of inbox cases, or when a miss was a Grok-only failure (lexical already had the token and Grok still rewrote it).</p>
+
+      <h3>A worked miss, with no one at the keyboard</h3>
+      <div class="take">
+        <header>
+          <span>take 4821</span>
+          <span>changed: false</span>
+        </header>
+        <ol>
+          <li><span class="when">you say</span><span><code>Screen code spoken case name.</code></span></li>
+          <li><span class="when">OCR sees</span><span>the same spaced words (pollution), not the underscored form</span></li>
+          <li><span class="when">paste</span><span class="bad">Screen code spoken case name.</span></li>
+          <li><span class="when">factory B</span><span>utterance is 5 identifier fragments; mint expected <code>screen_code_spoken_case_name.</code></span></li>
+          <li><span class="when">harvest</span><span>auto-accepts; corpus gains <code>screen_code_spoken_case_name</code> without a paste</span></li>
+        </ol>
+      </div>
+      <p>If the next day harvest finds <code>collect_on_screen_spellings</code> in a Hermes session, factory A invents “collect on screen spellings”, unit-tests the joiner, and keeps the case. You never see the JSON unless you open the inbox.</p>
+
+      <h2 id="capture">OCR and screenshots</h2>
+      <p>Screenshots stay a local grim PNG in a temp fd, unlinked after tesseract. They are not uploaded, not attached to eval JSON, not sent to Grok.</p>
+      <h3>When to shoot</h3>
+      <ul>
+        <li><strong>Record start.</strong> The window you were looking at while you spoke. This is the important new shot. Today we only shoot after ASR, when you have often scrolled to the input.</li>
+        <li><strong>Refine start.</strong> Keep the current shot; merge tokens from both.</li>
+        <li><strong>Recency.</strong> Keep tokens from the last few focused windows for five minutes (already sketched). Not “every monitor, forever.”</li>
+      </ul>
+      <p>A tiny terminal still yields a tiny shot. Recency plus record-start is how we survive shrink-and-scroll. Full-desktop OCR stays off unless you later add an explicit “focused monitor” flag.</p>
+      <h3>Better than pixels, same interface</h3>
+      <p><code>collect_on_screen_spellings()</code> already hides the adapter. Next adapters, in order:</p>
+      <table>
+        <thead>
+          <tr><th>Adapter</th><th>Gets</th><th>When</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>grim + tesseract (now)</td><td>visible pixels of focused window</td><td>always, fail-closed</td></tr>
+          <tr><td>record-start grim</td><td>same, earlier</td><td>hotkey down</td></tr>
+          <tr><td>AT-SPI text tree</td><td>real strings, no underscore loss</td><td>if the client exposes a text node; Ghostty often will not</td></tr>
+          <tr><td>tmux / terminal scrollback</td><td>off-screen lines in this tty</td><td>only when we can prove the pane</td></tr>
+          <tr><td>agent session harvest</td><td>identifiers from the current Grok/Hermes/Claude/Codex session</td><td>cwd matches; tokens only</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="write">What gets written where</h2>
+      <table>
+        <thead>
+          <tr><th>Store</th><th>Who writes</th><th>Lifetime</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>grim temp PNG</td><td>capture</td><td>milliseconds; unlinked</td></tr>
+          <tr><td>runtime lexicon cache</td><td>collect</td><td>5 minutes</td></tr>
+          <tr><td>take log jsonl</td><td>refine</td><td>local, rotate ~30 days</td></tr>
+          <tr><td>eval inbox</td><td>harvest</td><td>until auto-accept or drop</td></tr>
+          <tr><td><code>refinement-eval.json</code></td><td>harvest auto-accept</td><td>git, identifier cases only</td></tr>
+          <tr><td><code>refine-dictionary.md</code></td><td>you, or confirm-to-pin</td><td>permanent; never OCR dump</td></tr>
+        </tbody>
+      </table>
+      <p><strong>Auto-write</strong> in this spec means: auto-write <em>evals</em> and the ephemeral lexicon. It does not mean auto-write the user dictionary. After the same join succeeds three times, the workbench may ask “pin <code>apply_lexical_hints</code>?” Default is no.</p>
+
+      <h2 id="sources">Other context</h2>
+      <p>Still a lexicon, not a dump. Candidates, cheapest first:</p>
+      <ul>
+        <li>Hyprland window title and class (free).</li>
+        <li>Identifiers in the focused cwd: <code>git ls-files</code> basenames, not file bodies.</li>
+        <li>Current agent session files for that cwd, passed through <code>extract_spellings</code> only.</li>
+        <li>AT-SPI if present.</li>
+      </ul>
+      <p>Do not put full session transcripts, <code>.env</code>, or clipboard contents into Grok. If a harvested token is not a near-miss of the spoken transcript, it is unused.</p>
+
+      <h2 id="packages">Work packages</h2>
+      <p>Separate tasks, same repo. Each package has a test you can run without a microphone.</p>
+      <div class="wp">
+        <h3>P1 — Take log</h3>
+        <p class="owner">scripts/voxtype-refine · no network</p>
+        <p>After each refine, append one jsonl record (raw, out, screen, window, changed, timestamps). Tests: tempfile path via env; secrets already stripped by extract_spellings stay stripped; file mode 0600.</p>
+      </div>
+      <div class="wp">
+        <h3>P2 — Record-start capture</h3>
+        <p class="owner">hyprland hook or a tiny helper Voxtype can call without stealing <code>pre_recording_command</code></p>
+        <p>On hotkey-down, grim the focused window to a runtime PNG with a generation id. Refine reads it if younger than the recording, OCRs, merges with the post-ASR shot, deletes both. Tests: stale file ignored; missing file is <code>[]</code>.</p>
+      </div>
+      <div class="wp">
+        <h3>P3 — Recency across recent windows</h3>
+        <p class="owner">extend the 5-minute lexicon</p>
+        <p>Key cache entries by window stableId. Merge last K focused windows. Tests: spoken identifier from window A still joins after focus moves to a tiny window B.</p>
+      </div>
+      <div class="wp">
+        <h3>P4 — Session and git harvest</h3>
+        <p class="owner">local, cwd-scoped</p>
+        <p>Pull identifiers from current-agent session files and <code>git ls-files</code> names. Same <code>extract_spellings</code>. Tests: no home paths, no <code>.env</code>, fold-match still required before use.</p>
+      </div>
+      <div class="wp">
+        <h3>P5 — Harvest-evals (the frictionless part)</h3>
+        <p class="owner">scripts/voxtype-refine harvest-evals</p>
+        <p>Factories A and B over the take log + session harvest. Auto-accept identifier-only cases into the corpus. Run <code>apply_lexical_hints</code> on the inbox in unit tests (no API). Optional nightly live Grok sample. Tests: a polluted miss mints <code>screen_code_spoken_case_name</code>; a prose sentence does not enter git.</p>
+      </div>
+      <div class="wp">
+        <h3>P6 — Confirm-to-pin dictionary</h3>
+        <p class="owner">workbench + refine.toml</p>
+        <p>Count successful joins. Prompt to pin. Never silent append. Tests: dictionary file unchanged until confirm.</p>
+      </div>
+      <p class="note">P1 and P5 are the eval answer. P2 and P3 are the “tiny / scrolled window” answer. P4 is extra identifiers without more OCR. P6 is the only dictionary write, and it is not automatic.</p>
+    </main>
+    <div class="rail" aria-hidden="true"></div>
+  </div>
+  <script>
+    const copy = [
+      {
+        io: "raw: apply lexical hints.\nscreen: apply_lexical_hints, Hyprland, …\nout: apply_lexical_hints.",
+        body: "Every dictation already produces this triple. We persist it. That is the only source of evals."
+      },
+      {
+        io: "~/.local/state/voxtype/refine-takes.jsonl\nmode 0600  ·  not git  ·  one line per take",
+        body: "The log is the notebook. Harvest reads it later. You do not open it unless you are curious."
+      },
+      {
+        io: "factory A  harvest identifiers → spoken split → local joiner\nfactory B  changed:false + same fold → mint expected\nfactory C  optional wrong-chord → next take is expected",
+        body: "None of these ask you to paste JSON. A and B run unattended. C is one key, and only if you want it."
+      },
+      {
+        io: "expected is a code token\ntranscript is that token spoken as words\n→ auto-append refinement-eval.json\nprose stays in the private log",
+        body: "Git only receives identifier cases. That is how the corpus grows while you dictate."
+      }
+    ];
+    const tabs = document.querySelectorAll(".film button");
+    const stage = document.getElementById("eval-stage");
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const i = Number(tab.dataset.step);
+        tabs.forEach((t) => t.setAttribute("aria-selected", t === tab ? "true" : "false"));
+        const item = copy[i];
+        stage.innerHTML = "<p class=\"io\"></p><p></p>";
+        stage.querySelector(".io").textContent = item.io;
+        stage.querySelector("p:last-child").textContent = item.body;
+      });
+    });
+  </script>
+</body>
+</html>

@@ -57,6 +57,59 @@ class RefinementEvalFixtureTests(unittest.TestCase):
                 self.assertIsInstance(case["repetitions"], int)
                 self.assertGreaterEqual(case["repetitions"], 1)
 
+    def test_screen_code_cases_use_crowded_session_identifiers(self) -> None:
+        code_cases = [case for case in CASES if case["name"].startswith("screen_code_")]
+        self.assertGreaterEqual(len(code_cases), 8)
+        shared = [
+            case
+            for case in code_cases
+            if case["name"]
+            not in {"screen_code_spoken_eval_name", "screen_code_spoken_case_name"}
+        ]
+        screens = [tuple(case["on_screen_spellings"]) for case in shared]
+        self.assertEqual(len(set(screens)), 1)
+        screen = set(screens[0])
+        for token in (
+            "leagueId",
+            "playerId",
+            "canonicalPlayerId",
+            "accessibilityLabel",
+            "SlotPicker",
+            "ActivityIndicator",
+            "created_at",
+            "collect_on_screen_spellings",
+            "fourth-down-platform",
+            "FOURTH_DOWN_MODEL_BASE_URL",
+            "SettingsPanel.qml",
+            "testID",
+        ):
+            self.assertIn(token, screen)
+        hits = {case["name"]: case for case in code_cases}
+        self.assertIn("leagueId", hits["screen_code_camel_league_id"]["expected"])
+        self.assertIn("canonicalPlayerId", hits["screen_code_camel_canonical_player"]["expected"])
+        self.assertNotIn("canonical playerId", hits["screen_code_camel_canonical_player"]["expected"])
+        self.assertIn("leagueId", hits["screen_code_two_identifiers"]["expected"])
+        self.assertIn("accountId", hits["screen_code_two_identifiers"]["expected"])
+        self.assertNotIn("ActivityIndicator", hits["screen_code_prefix_not_expanded"]["expected"])
+        for token in screen:
+            self.assertNotIn(token, hits["screen_code_busy_unspoken"]["expected"])
+        spoken = hits["screen_code_spoken_eval_name"]
+        self.assertIn("`screen_identifier_near_miss`", spoken["expected"])
+        self.assertIn("×3", spoken["expected"])
+        self.assertIn("`screen_identifier_near_miss`", spoken["on_screen_spellings"])
+        self.assertIn("×3", spoken["on_screen_spellings"])
+        case_name = hits["screen_code_spoken_case_name"]
+        self.assertEqual(case_name["expected"], "screen_code_spoken_case_name.")
+        self.assertIn("screen_code_spoken_case_name", case_name["on_screen_spellings"])
+
+    def test_eval_runner_only_filters_by_glob(self) -> None:
+        selected = RUNNER.load_cases("screen_code_*")
+        self.assertTrue(selected)
+        self.assertTrue(all(case["name"].startswith("screen_code_") for case in selected))
+        self.assertLess(len(selected), len(CASES))
+        with self.assertRaises(SystemExit):
+            RUNNER.load_cases("no_such_case")
+
 
 @unittest.skipUnless(
     os.environ.get("VOXTYPE_LIVE_REFINE_PROVIDER"),
@@ -78,6 +131,10 @@ class LiveRefinementContractTests(unittest.TestCase):
                 ):
                     user, system = RUNNER.make_eval_request(MODULE, provider, case)
                     actual = MODULE.complete(provider, model, user, system)
+                    dictionary = "\n".join(case.get("dictionary", []))
+                    actual = MODULE.finish_refinement(
+                        actual, dictionary, case.get("on_screen_spellings")
+                    )
                     self.assertEqual(actual, case["expected"])
 
 

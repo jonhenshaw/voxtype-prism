@@ -1,0 +1,82 @@
+{
+  "grok.json": {
+    "provider": "grok",
+    "model": "grok-4.20-0309-non-reasoning",
+    "passed": 14,
+    "failed": 5,
+    "unique": {
+      "all": {
+        "passed": 8,
+        "total": 13
+      },
+      "screen": {
+        "passed": 8,
+        "total": 13
+      }
+    },
+    "median_ms": 513,
+    "failures": [
+      {
+        "name": "screen_code_camel_canonical_player",
+        "attempt": 2,
+        "expected": "Look up the canonicalPlayerId.",
+        "actual": "Look up the canonical player ID."
+      },
+      {
+        "name": "screen_code_camel_accessibility",
+        "attempt": 1,
+        "expected": "Set the accessibilityLabel.",
+        "actual": "Set the accessibility label."
+      },
+      {
+        "name": "screen_code_pascal_slot_picker",
+        "attempt": 1,
+        "expected": "Open the SlotPicker.",
+        "actual": "Open the slot picker."
+      },
+      {
+        "name": "screen_code_snake_collect",
+        "attempt": 1,
+        "expected": "Call collect_on_screen_spellings.",
+        "actual": "Call collect on screen spellings."
+      },
+      {
+        "name": "screen_code_kebab_repo",
+        "attempt": 1,
+        "expected": "Clone fourth-down-platform.",
+        "actual": "Clone fourth down platform."
+      }
+    ]
+  },
+  "s1mini-lexical-on.json": {
+    "provider": "s1mini",
+    "model": "s1-mini",
+    "passed": 17,
+    "failed": 2,
+    "unique": {
+      "all": {
+        "passed": 11,
+        "total": 13
+      },
+      "screen": {
+        "passed": 11,
+        "total": 13
+      }
+    },
+    "median_ms": 21,
+    "failures": [
+      {
+        "name": "screen_code_kebab_repo",
+        "attempt": 1,
+        "expected": "Clone fourth-down-platform.",
+        "actual": "Clone fourth-down platform."
+      },
+      {
+        "name": "screen_code_screaming_env",
+        "attempt": 1,
+        "expected": "Print the FOURTH_DOWN_MODEL_BASE_URL.",
+        "actual": "Print the 4th_DOWN_MODEL_BASE_URL."
+      }
+    ]
+  }
+}

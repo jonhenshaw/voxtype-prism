@@ -36,6 +36,8 @@ Do not fork the corpus into an experiment directory. Point at the fixture
    ```bash
    VOXTYPE_LIVE_REFINE_PROVIDER=s1mini python3 tests/run_refinement_eval.py \
      --out experiments/$slug/runs/s1mini.json
+   VOXTYPE_LIVE_REFINE_PROVIDER=grok python3 tests/run_refinement_eval.py \
+     --only 'screen_code_*' --out experiments/$slug/runs/grok-identifiers.json
    ```
 
 5. Commit the folder when the write-up names every run file and the conclusion
@@ -104,6 +106,8 @@ punctuation, say so; do not silently treat it as a pass.
 ## Corpus rules
 
 - New product invariants belong in `tests/fixtures/refinement-eval.json`.
+- `scripts/voxtype-refine harvest-evals` writes `tests/fixtures/refinement-eval.inbox.json`
+  only. Promote inbox rows into the product corpus by hand. Do not auto-append.
 - Give each case a stable `name`. Do not reuse names.
 - Use `on_screen_spellings`, `dictionary`, and `context` only when that field
   is the thing under test.
@@ -112,6 +116,15 @@ punctuation, say so; do not silently treat it as a pass.
 - Keep `expected` conservative-editor output unless the experiment is
   explicitly scoring a normalizer. If you add normalizer-shaped expects,
   say that in the experiment README so Grok/S1-mini comparisons stay honest.
+- Identifier cases named `screen_code_*` use real tokens mined from local
+  Claude Code, Hermes, Codex, and Grok sessions (camelCase, PascalCase,
+  snake_case, kebab-case, env vars, filenames). Spoken transcripts are
+  synthetic ASR near-misses. Do not paste personal session text into the
+  corpus. Each of those cases shares a crowded on-screen list so a hit
+  must pick the spoken identifier and leave sibling terms uninserted.
+  Transcripts already have sentence casing and a final period so exact
+  match scores the identifier, not polish. Existing `screen_compound_split`
+  / `screen_identifier_near_miss` cases still catch editor capitalization.
 
 ## What not to store
 
