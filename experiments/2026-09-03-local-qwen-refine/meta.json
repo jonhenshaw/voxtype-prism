@@ -1,0 +1,24 @@
+{
+  "id": "2026-09-03-local-qwen-refine",
+  "date": "2026-09-03",
+  "status": "complete",
+  "question": "Should Prism refine switch from S1-mini to the local Qwen 3.8 27B already served on :8000?",
+  "corpus": "tests/fixtures/refinement-eval.json",
+  "harness": "tests/run_refinement_eval.py",
+  "git_head": "447825b7714931e149e6195e20abd87b34613423",
+  "runs": [
+    {
+      "id": "local-qwen-obliterated",
+      "file": "runs/local-qwen-obliterated.json",
+      "provider": "local",
+      "model": "Qwen3.8-27B-OBLITERATED-GGUF",
+      "conditions": {
+        "endpoint": "http://127.0.0.1:8000/v1",
+        "quant": "Q4_K_M",
+        "thinking": false,
+        "temperature": 0.1,
+        "shared_slot": true
+      }
+    }
+  ]
+}
