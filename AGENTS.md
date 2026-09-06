@@ -10,6 +10,15 @@ User-owned files (not in this repo):
 - `~/.config/voxtype/refine-dictionary.md` — terms appended to the system prompt; `scripts/voxtype-refine edit-dictionary`
 
 
+`omarchy plugin` installs Prism as its own clone of the published repo, so the
+installed tree at `~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism`
+is a separate checkout that drifts. Never edit it directly: the next
+`omarchy plugin update` discards the edit, and until then the running behaviour
+matches no commit. Edit here, then `scripts/voxtype-prism-devsync status` to see
+the drift and `scripts/voxtype-prism-devsync install` to push this checkout onto
+the install (tracked files only; it deletes nothing and never touches
+`~/.config/voxtype`). Restart Voxtype afterwards to reload script changes.
+
 Credentials stay in `~/.omp/agent/agent.db`. `scripts/voxtype-prism-config` only
 toggles `[osd] enabled`. Human-facing commands: README.md § LLM refine.
 
@@ -20,6 +29,15 @@ session-mined identifier cases). Save provider/model trials under
 
 Live OCR tokens go in the provider JSON `on_screen_spellings`. The 5-minute
 recency cache is joiner-only (`finish_refinement` / s1mini lexical), not Grok.
+
+Because the cache is joiner-only, joiner providers may also skip the screen read
+itself: `collect_on_screen_capture(allow_cache_reuse=True)` returns the stored
+lexicon as `cached` with an empty `live` while the entry is inside its TTL,
+which drops grim + tesseract (~1.2s) from the refine pass. `refine_text` enables
+it for `_JOINER_SPELLING_PROVIDERS` only — a live-only provider that reused the
+cache would receive no spellings at all. Keep that set and the
+`provider_spellings` selection in sync; the empty `live` is what keeps stale
+screen text away from providers by construction.
 
 `scripts/voxtype-refine harvest-evals` writes `tests/fixtures/refinement-eval.inbox.json`
 only; it never writes the product corpus. Take log:

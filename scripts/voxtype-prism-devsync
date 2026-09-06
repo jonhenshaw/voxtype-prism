@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Compare and sync this checkout against the installed Omarchy plugin.
+
+`omarchy plugin` installs Voxtype Prism as its own clone of the published
+repository. Editing that copy directly is easy to do and easy to lose: the
+next `omarchy plugin update` overwrites it, and until then the installed
+behaviour no longer matches any commit. This helper makes the drift visible
+and gives development edits one direction of travel — checkout to install.
+
+  voxtype-prism-devsync status          # what differs, and in which direction
+  voxtype-prism-devsync install         # copy tracked files checkout -> plugin
+  voxtype-prism-devsync install --dry-run
+
+Only files tracked by git are copied. Nothing in the installed tree is
+deleted, and user-owned config under ~/.config/voxtype is never touched.
+"""
+
+from __future__ import annotations
+
+import argparse
+import filecmp
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+PLUGIN_ID = "io.github.jonhenshaw.voxtype-prism"
+GIT_TIMEOUT_SECONDS = 15.0
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def plugin_dir() -> Path:
+    config = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    base = Path(config).expanduser() if config else Path.home() / ".config"
+    return base / "omarchy" / "plugins" / PLUGIN_ID
+
+
+def tracked_files(root: Path) -> list[str]:
+    result = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        timeout=GIT_TIMEOUT_SECONDS,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git ls-files failed in {root}")
+    return [name for name in result.stdout.split("\0") if name]
+
+
+def classify(root: Path, target: Path, names: list[str]) -> dict[str, list[str]]:
+    same: list[str] = []
+    differs: list[str] = []
+    missing: list[str] = []
+    for name in names:
+        source = root / name
+        installed = target / name
+        if not installed.exists():
+            missing.append(name)
+        elif filecmp.cmp(source, installed, shallow=False):
+            same.append(name)
+        else:
+            differs.append(name)
+    return {"same": same, "differs": differs, "missing": missing}
+
+
+def status(args: argparse.Namespace) -> int:
+    root, target = repo_root(), plugin_dir()
+    if not target.is_dir():
+        print(f"plugin not installed at {target}")
+        return 1
+    report = classify(root, target, tracked_files(root))
+    total = sum(len(v) for v in report.values())
+    print(f"checkout: {root}")
+    print(f"installed: {target}")
+    print(
+        f"{len(report['same'])}/{total} tracked files identical, "
+        f"{len(report['differs'])} differ, {len(report['missing'])} missing"
+    )
+    for name in report["differs"]:
+        print(f"  differs  {name}")
+    for name in report["missing"]:
+        print(f"  missing  {name}")
+    if report["differs"] or report["missing"]:
+        print("\nrun `voxtype-prism-devsync install` to push this checkout to the plugin")
+        return 1
+    return 0
+
+
+def install(args: argparse.Namespace) -> int:
+    root, target = repo_root(), plugin_dir()
+    if not target.is_dir():
+        print(f"plugin not installed at {target}", file=sys.stderr)
+        return 1
+    report = classify(root, target, tracked_files(root))
+    pending = report["differs"] + report["missing"]
+    if not pending:
+        print("installed plugin already matches this checkout")
+        return 0
+    for name in pending:
+        destination = target / name
+        if args.dry_run:
+            print(f"would copy  {name}")
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(root / name, destination)
+        print(f"copied  {name}")
+    if args.dry_run:
+        print(f"\n{len(pending)} file(s) would be copied; nothing written")
+        return 0
+    print(f"\n{len(pending)} file(s) copied.")
+    # voxtype-refine is spawned per dictation, so it is already live. The
+    # daemon only re-reads its own config and the QML surfaces at startup.
+    print("scripts/voxtype-refine is a per-dictation child and is live now.")
+    print("Restart only for daemon config or QML changes:")
+    print("  systemctl --user restart voxtype")
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description=__doc__)
+    sub = result.add_subparsers(dest="command", required=True)
+    sub.add_parser("status", help="report drift between checkout and installed plugin")
+    installer = sub.add_parser("install", help="copy tracked files checkout -> plugin")
+    installer.add_argument("--dry-run", action="store_true", help="show what would change")
+    return result
+
+
+def main() -> int:
+    args = parser().parse_args()
+    try:
+        return {"status": status, "install": install}[args.command](args)
+    except (RuntimeError, subprocess.TimeoutExpired, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

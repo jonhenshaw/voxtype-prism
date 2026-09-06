@@ -276,6 +276,31 @@ tests/capture-workbench.sh /tmp/voxtype-prism-workbench.png
 git diff --check
 ```
 
+### Testing a change against the installed plugin
+
+`omarchy plugin` installs Prism as its own clone, so the installed tree is a
+separate checkout from this one. Edit here, never there — an edit made in the
+installed tree is discarded by the next `omarchy plugin update`, and until then
+the running behaviour matches no commit.
+
+```bash
+scripts/voxtype-prism-devsync status         # what differs, and in which direction
+scripts/voxtype-prism-devsync install --dry-run
+scripts/voxtype-prism-devsync install        # copy tracked files checkout -> plugin
+```
+
+`scripts/voxtype-refine` is spawned fresh per dictation, so a synced change to
+it is live immediately. Restart the daemon only after a change to Voxtype's own
+config or to the QML surfaces:
+
+```bash
+systemctl --user restart voxtype
+```
+
+`status` exits non-zero when the install has drifted, so it also works as a
+pre-flight check. `install` copies git-tracked files only; it deletes nothing in
+the installed tree and never touches `~/.config/voxtype`.
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) for lifecycle and failure boundaries,
 [design-qa.md](design-qa.md) for the Refinement Workbench comparison, and
 [docs/design-qa.md](docs/design-qa.md) for the runtime indicator comparison.

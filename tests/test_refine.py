@@ -1155,7 +1155,7 @@ class RefineHelperTests(unittest.TestCase):
                 ) as collect:
                     with patch.object(MODULE, "complete", return_value="Use Hyprland.") as complete:
                         self.assertEqual(MODULE.refine_text(raw), "Use Hyprland.")
-            collect.assert_called_once_with()
+            collect.assert_called_once_with(allow_cache_reuse=False)
             _provider, _model, user, system = complete.call_args.args
             self.assertEqual(
                 json.loads(user),
@@ -1620,6 +1620,73 @@ class RefineHelperTests(unittest.TestCase):
                 MODULE.collect_on_screen_spellings(MODULE.FixtureSource("Welcome back")),
                 MODULE.extract_spellings("Welcome back"),
             )
+
+    def test_capture_reuse_skips_screen_read_while_lexicon_is_fresh(self) -> None:
+        calls = []
+
+        class CountingSource:
+            def read_text(self) -> str:
+                calls.append(1)
+                return "playerId Juniper Hyprland"
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "on-screen-lexicon.json"
+            with patch.dict(os.environ, {"VOXTYPE_ON_SCREEN_LEXICON": str(cache)}):
+                with patch.object(MODULE, "GrimTesseractSource", CountingSource):
+                    first = MODULE.collect_on_screen_capture(allow_cache_reuse=True)
+                    self.assertEqual(len(calls), 1)
+                    self.assertIn("playerId", first.live)
+                    for _ in range(4):
+                        later = MODULE.collect_on_screen_capture(allow_cache_reuse=True)
+                    # The capture ran once; the rest were served from the cache.
+                    self.assertEqual(len(calls), 1)
+                    self.assertEqual(later.live, [])
+                    self.assertIn("playerId", later.cached)
+                    self.assertIn("playerId", later.joiner)
+
+    def test_capture_reuse_is_off_by_default(self) -> None:
+        calls = []
+
+        class CountingSource:
+            def read_text(self) -> str:
+                calls.append(1)
+                return "playerId Juniper"
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "on-screen-lexicon.json"
+            with patch.dict(os.environ, {"VOXTYPE_ON_SCREEN_LEXICON": str(cache)}):
+                with patch.object(MODULE, "GrimTesseractSource", CountingSource):
+                    for _ in range(3):
+                        MODULE.collect_on_screen_capture()
+        self.assertEqual(len(calls), 3)
+
+    def test_capture_reuse_recaptures_once_lexicon_expires(self) -> None:
+        calls = []
+
+        class CountingSource:
+            def read_text(self) -> str:
+                calls.append(1)
+                return "playerId Juniper"
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "on-screen-lexicon.json"
+            with patch.dict(os.environ, {"VOXTYPE_ON_SCREEN_LEXICON": str(cache)}):
+                with patch.object(MODULE, "GrimTesseractSource", CountingSource):
+                    MODULE.collect_on_screen_capture(allow_cache_reuse=True)
+                    self.assertEqual(len(calls), 1)
+                    with patch.object(MODULE, "ON_SCREEN_LEXICON_TTL_SECONDS", -1):
+                        refreshed = MODULE.collect_on_screen_capture(
+                            allow_cache_reuse=True
+                        )
+        self.assertEqual(len(calls), 2)
+        self.assertIn("playerId", refreshed.live)
+
+    def test_joiner_provider_set_governs_reuse_and_spellings(self) -> None:
+        # Reuse must be offered to exactly the providers fed from `joiner`;
+        # a live-only provider reusing the cache would receive no spellings.
+        self.assertIn("s1mini", MODULE._JOINER_SPELLING_PROVIDERS)
+        for provider_id in ("grok", "anthropic", "openai", "local"):
+            self.assertNotIn(provider_id, MODULE._JOINER_SPELLING_PROVIDERS)
 
     def test_refine_text_sends_live_ocr_not_cache_to_provider(self) -> None:
         raw = "Look up the player id."
