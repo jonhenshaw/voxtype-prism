@@ -10,6 +10,15 @@ User-owned files (not in this repo):
 - `~/.config/voxtype/refine-dictionary.md` — terms appended to the system prompt; `scripts/voxtype-refine edit-dictionary`
 
 
+`omarchy plugin` installs Prism as its own clone of the published repo, so the
+installed tree at `~/.config/omarchy/plugins/io.github.jonhenshaw.voxtype-prism`
+is a separate checkout that drifts. Never edit it directly: the next
+`omarchy plugin update` discards the edit, and until then the running behaviour
+matches no commit. Edit here, then `scripts/voxtype-prism-devsync status` to see
+the drift and `scripts/voxtype-prism-devsync install` to push this checkout onto
+the install (tracked files only; it deletes nothing and never touches
+`~/.config/voxtype`). Restart Voxtype afterwards to reload script changes.
+
 Credentials stay in `~/.omp/agent/agent.db`. `scripts/voxtype-prism-config` only
 toggles `[osd] enabled`. Human-facing commands: README.md § LLM refine.
 
