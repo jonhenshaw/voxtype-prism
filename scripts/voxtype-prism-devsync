@@ -111,7 +111,11 @@ def install(args: argparse.Namespace) -> int:
     if args.dry_run:
         print(f"\n{len(pending)} file(s) would be copied; nothing written")
         return 0
-    print(f"\n{len(pending)} file(s) copied. Restart Voxtype to pick up script changes:")
+    print(f"\n{len(pending)} file(s) copied.")
+    # voxtype-refine is spawned per dictation, so it is already live. The
+    # daemon only re-reads its own config and the QML surfaces at startup.
+    print("scripts/voxtype-refine is a per-dictation child and is live now.")
+    print("Restart only for daemon config or QML changes:")
     print("  systemctl --user restart voxtype")
     return 0
 

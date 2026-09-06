@@ -287,7 +287,14 @@ the running behaviour matches no commit.
 scripts/voxtype-prism-devsync status         # what differs, and in which direction
 scripts/voxtype-prism-devsync install --dry-run
 scripts/voxtype-prism-devsync install        # copy tracked files checkout -> plugin
-systemctl --user restart voxtype             # reload post-process scripts
+```
+
+`scripts/voxtype-refine` is spawned fresh per dictation, so a synced change to
+it is live immediately. Restart the daemon only after a change to Voxtype's own
+config or to the QML surfaces:
+
+```bash
+systemctl --user restart voxtype
 ```
 
 `status` exits non-zero when the install has drifted, so it also works as a
